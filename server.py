@@ -1,0 +1,170 @@
+"""
+VagoScore — Backend web (Flask) · v2
+Endpoints en tiempo real (API-Football) + Kelly + Backtesting.
+"""
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from flask import Flask, request, jsonify, send_from_directory
+
+import config
+from engine.pipeline import run_prediction
+from engine.scorer import WeightConfig
+from engine.kelly import analyze_bankroll, simulate_growth
+from engine.backtest import run_backtest
+from cache.db import cache_stats, cache_clear
+from scrapers import apifootball as apif
+
+app = Flask(__name__, static_folder="web", static_url_path="")
+
+
+@app.route("/")
+def index():
+    return send_from_directory("web", "index.html")
+
+
+@app.route("/api/status")
+def status():
+    return jsonify({
+        "apifootball_connected": config.has_apifootball(),
+        "cache": cache_stats(),
+    })
+
+
+@app.route("/api/leagues")
+def leagues():
+    if not config.has_apifootball():
+        return jsonify({"error": "API-Football no configurada", "leagues": []}), 200
+    return jsonify({"leagues": apif.get_current_leagues()})
+
+
+@app.route("/api/fixtures")
+def fixtures():
+    league_id = request.args.get("league", type=int)
+    season = request.args.get("season", type=int)
+    days = request.args.get("days", default=14, type=int)
+    if not league_id or not season:
+        return jsonify({"error": "Faltan league y season"}), 400
+    return jsonify({"fixtures": apif.get_upcoming_fixtures(league_id, season, days)})
+
+
+@app.route("/api/live")
+def live():
+    if not config.has_apifootball():
+        return jsonify({"live": []})
+    return jsonify({"live": apif.get_live_fixtures()})
+
+
+@app.route("/api/lineups/<int:fixture_id>")
+def lineups(fixture_id):
+    return jsonify(apif.get_fixture_lineups(fixture_id))
+
+
+@app.route("/api/odds/<int:fixture_id>")
+def odds(fixture_id):
+    return jsonify(apif.get_fixture_odds(fixture_id))
+
+
+@app.route("/api/predict", methods=["POST"])
+def predict():
+    data = request.get_json(force=True)
+    team_a = (data.get("team_a") or "").strip()
+    team_b = (data.get("team_b") or "").strip()
+    if not team_a or not team_b:
+        return jsonify({"error": "Faltan los nombres de los equipos"}), 400
+
+    is_national = bool(data.get("is_national", True))
+    lineup_a = data.get("lineup_a") or None
+    lineup_b = data.get("lineup_b") or None
+
+    w = data.get("weights")
+    if w:
+        try:
+            weights = WeightConfig(
+                sofascore_form=float(w.get("sofascore_form", 0.25)),
+                elo_rating=float(w.get("elo_rating", 0.25)),
+                chemistry=float(w.get("chemistry", 0.20)),
+                h2h=float(w.get("h2h", 0.15)),
+                market_value=float(w.get("market_value", 0.15)),
+            )
+            weights.validate()
+        except ValueError as e:
+            return jsonify({"error": f"Pesos inválidos: {e}"}), 400
+    else:
+        weights = None
+
+    try:
+        results = run_prediction(
+            team_a=team_a, team_b=team_b, is_national=is_national,
+            lineup_a=lineup_a, lineup_b=lineup_b, weights=weights,
+        )
+        return jsonify(results)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": f"Error en el análisis: {e}"}), 500
+
+
+@app.route("/api/kelly", methods=["POST"])
+def kelly():
+    data = request.get_json(force=True)
+    try:
+        model_probs = {
+            "home": float(data["p_home"]) / 100,
+            "draw": float(data["p_draw"]) / 100,
+            "away": float(data["p_away"]) / 100,
+        }
+        odds = {
+            "home": float(data["odds_home"]),
+            "draw": float(data["odds_draw"]),
+            "away": float(data["odds_away"]),
+        }
+        bankroll = float(data["bankroll"])
+        kelly_mult = float(data.get("kelly_multiplier", 0.25))
+        result = analyze_bankroll(
+            model_probs=model_probs, odds=odds, bankroll=bankroll,
+            kelly_fraction_multiplier=kelly_mult,
+            team_a=data.get("team_a", "Local"),
+            team_b=data.get("team_b", "Visitante"),
+            currency=data.get("currency", "COP"),
+        )
+        if result.get("best_bet"):
+            b = result["best_bet"]
+            result["simulation"] = simulate_growth(
+                win_prob=b["model_prob"], decimal_odds=b["decimal_odds"],
+                kelly_mult=kelly_mult, bankroll=bankroll,
+                n_bets=100, n_simulations=400,
+            )
+        return jsonify(result)
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": f"Datos inválidos: {e}"}), 400
+
+
+@app.route("/api/backtest", methods=["POST"])
+def backtest():
+    data = request.get_json(force=True)
+    predictions = data.get("predictions", [])
+    if not predictions:
+        return jsonify({"error": "Sin predicciones para evaluar"}), 400
+    return jsonify(run_backtest(predictions))
+
+
+@app.route("/api/cache/stats")
+def cache_status():
+    return jsonify(cache_stats())
+
+
+@app.route("/api/cache/clear", methods=["POST"])
+def cache_wipe():
+    return jsonify({"cleared": cache_clear()})
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("FLASK_ENV") != "production"
+    print("=" * 52)
+    print(f"  VagoScore v2 corriendo en http://localhost:{port}")
+    print(f"  API-Football: {'conectada' if config.has_apifootball() else 'sin clave'}")
+    print("=" * 52)
+    app.run(host="0.0.0.0", port=port, debug=debug)

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VagoScore — Inteligencia de partidos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="aurora"></div>
+<div class="grid-overlay"></div>
+
+<!-- ░░░ NAV ░░░ -->
+<header class="nav">
+  <div class="nav-brand">
+    <span class="logo">VS</span>
+    <div>
+      <span class="logo-name">VAGOSCORE</span>
+      <span class="logo-sub">match intelligence</span>
+    </div>
+  </div>
+  <nav class="nav-tabs" id="nav-tabs">
+    <button class="tab active" data-view="explore">Partidos</button>
+    <button class="tab" data-view="analyze">Análisis</button>
+    <button class="tab" data-view="bankroll">Banca</button>
+    <button class="tab" data-view="backtest">Backtest</button>
+  </nav>
+  <div class="nav-status">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">conectando…</span>
+  </div>
+</header>
+
+<main class="stage">
+
+  <!-- ═══════ VISTA 1: EXPLORAR PARTIDOS ═══════ -->
+  <section class="view active" id="view-explore">
+    <div class="view-head">
+      <span class="kicker">En vivo · tiempo real</span>
+      <h1 class="display">Elige tu próxima<br><span class="accent">jugada maestra</span></h1>
+      <p class="lede">Explora competiciones activas, escoge un partido y deja que el modelo haga el trabajo pesado.</p>
+    </div>
+
+    <div class="league-picker">
+      <label class="field-label">Competición</label>
+      <div class="select-wrap">
+        <select id="league-select"><option value="">Cargando ligas…</option></select>
+      </div>
+    </div>
+
+    <div class="fixtures-grid" id="fixtures-grid">
+      <div class="empty-hint" id="fixtures-hint">Selecciona una competición para ver los próximos partidos.</div>
+    </div>
+  </section>
+
+  <!-- ═══════ VISTA 2: ANÁLISIS ═══════ -->
+  <section class="view" id="view-analyze">
+    <div class="view-head">
+      <span class="kicker">02 · Motor de predicción</span>
+      <h1 class="display">Análisis del <span class="accent">enfrentamiento</span></h1>
+    </div>
+
+    <div class="glass matchup-input">
+      <div class="mi-teams">
+        <input type="text" id="team-a" value="Brasil" placeholder="Local">
+        <span class="mi-vs">VS</span>
+        <input type="text" id="team-b" value="Marruecos" placeholder="Visitante">
+      </div>
+      <div class="mi-controls">
+        <div class="toggle" id="type-toggle">
+          <button class="toggle-opt active" data-national="true">Selecciones</button>
+          <button class="toggle-opt" data-national="false">Clubes</button>
+        </div>
+        <button class="btn-primary" id="run-btn">Analizar <span>→</span></button>
+      </div>
+    </div>
+
+    <div class="loading-zone" id="loading-zone" hidden>
+      <div class="orbit"><span></span><span></span><span></span></div>
+      <p id="loading-msg">Conectando con las fuentes…</p>
+    </div>
+
+    <div id="analysis-results" hidden></div>
+  </section>
+
+  <!-- ═══════ VISTA 3: GESTIÓN DE BANCA (KELLY) ═══════ -->
+  <section class="view" id="view-bankroll">
+    <div class="view-head">
+      <span class="kicker">03 · Criterio de Kelly</span>
+      <h1 class="display">Gestión de <span class="accent">banca</span></h1>
+      <p class="lede">Cuánto apostar según tu ventaja matemática. No cuánto puedes ganar — cuánto deberías arriesgar.</p>
+    </div>
+
+    <div class="glass kelly-input">
+      <div class="kelly-grid">
+        <div class="kfield">
+          <label>Tu banca total</label>
+          <div class="input-currency">
+            <span id="currency-sym">$</span>
+            <input type="number" id="bankroll" value="100000" min="0">
+            <select id="currency"><option>COP</option><option>USD</option><option>EUR</option><option>MXN</option><option>ARS</option></select>
+          </div>
+        </div>
+        <div class="kfield">
+          <label>Estrategia de Kelly</label>
+          <select id="kelly-mult">
+            <option value="0.25">Cuarto Kelly — conservador (recomendado)</option>
+            <option value="0.5">Medio Kelly — moderado</option>
+            <option value="1">Kelly completo — agresivo</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="kelly-probs">
+        <p class="ksection">Probabilidades del modelo (%)</p>
+        <div class="prob-inputs">
+          <div class="pin"><label id="kp-a-lbl">Local</label><input type="number" id="kp-home" value="48" min="0" max="100"></div>
+          <div class="pin"><label>Empate</label><input type="number" id="kp-draw" value="27" min="0" max="100"></div>
+          <div class="pin"><label id="kp-b-lbl">Visitante</label><input type="number" id="kp-away" value="25" min="0" max="100"></div>
+        </div>
+        <p class="ksection">Cuotas de la casa (decimales)</p>
+        <div class="prob-inputs">
+          <div class="pin"><label id="ko-a-lbl">Local</label><input type="number" id="ko-home" value="1.85" step="0.01" min="1"></div>
+          <div class="pin"><label>Empate</label><input type="number" id="ko-draw" value="3.50" step="0.01" min="1"></div>
+          <div class="pin"><label id="ko-b-lbl">Visitante</label><input type="number" id="ko-away" value="4.20" step="0.01" min="1"></div>
+        </div>
+      </div>
+
+      <button class="btn-primary full" id="kelly-btn">Calcular apuesta óptima <span>→</span></button>
+      <p class="autofill-hint" id="autofill-hint" hidden>Datos cargados desde tu último análisis.</p>
+    </div>
+
+    <div id="kelly-results" hidden></div>
+  </section>
+
+  <!-- ═══════ VISTA 4: BACKTESTING ═══════ -->
+  <section class="view" id="view-backtest">
+    <div class="view-head">
+      <span class="kicker">04 · Validación histórica</span>
+      <h1 class="display">¿Qué tan bueno es <span class="accent">el modelo?</span></h1>
+      <p class="lede">El backtesting corre el modelo sobre partidos ya jugados y mide su acierto real. La honestidad del producto vive aquí.</p>
+    </div>
+
+    <div class="glass backtest-input">
+      <p class="bt-help">Pega tus predicciones históricas en formato JSON (una lista). Cada partido necesita las probabilidades del modelo, el resultado real y, opcionalmente, las cuotas para calcular el ROI.</p>
+      <textarea id="bt-data" rows="10" spellcheck="false">[
+  {"match":"Brasil vs Marruecos","date":"2023-03-25","p_home":0.55,"p_draw":0.25,"p_away":0.20,"actual":"away","odds":{"home":1.70,"draw":3.50,"away":5.00}},
+  {"match":"Argentina vs Francia","date":"2022-12-18","p_home":0.45,"p_draw":0.28,"p_away":0.27,"actual":"draw","odds":{"home":2.20,"draw":3.30,"away":3.10}},
+  {"match":"España vs Alemania","date":"2022-11-27","p_home":0.40,"p_draw":0.30,"p_away":0.30,"actual":"draw","odds":{"home":2.40,"draw":3.20,"away":2.90}},
+  {"match":"Portugal vs Marruecos","date":"2022-12-10","p_home":0.60,"p_draw":0.22,"p_away":0.18,"actual":"away","odds":{"home":1.60,"draw":3.80,"away":5.50}}
+]</textarea>
+      <button class="btn-primary full" id="bt-btn">Ejecutar backtest <span>→</span></button>
+    </div>
+
+    <div id="bt-results" hidden></div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p class="disc"><strong>VagoScore es una herramienta de análisis estadístico, no un consejo de apuesta ni financiero.</strong> Ningún modelo predice el fútbol con certeza. El criterio de Kelly optimiza el crecimiento a largo plazo bajo supuestos que la realidad no siempre cumple.</p>
+  <p class="resp">Apuesta solo lo que puedas permitirte perder · +18 · Juega con responsabilidad.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
