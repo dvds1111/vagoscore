@@ -42,23 +42,46 @@ async function init() {
 init();
 
 /* ═══ LEAGUES + FIXTURES ═══ */
+let leaguesGrouped = null;
+
 async function loadLeagues() {
-  const d = await fetch('/api/leagues').then(r => r.json());
-  leaguesData = d.leagues || [];
+  // Carga agrupada jerárquica: mundiales → continentes → países
+  const g = await fetch('/api/leagues/grouped').then(r => r.json());
+  leaguesGrouped = g;
+  // Aplanar para índice rápido por id
+  leaguesData = [];
+  const buildOptions = () => {
+    let html = '<option value="">Elige competición…</option>';
+    // 1. Mundiales y continentales primero
+    if (g.world && g.world.length) {
+      html += '<optgroup label="🌍 MUNDIALES Y CONTINENTALES">';
+      g.world.forEach(l => { const i = leaguesData.push(l) - 1; html += `<option value="${i}">${l.name}</option>`; });
+      html += '</optgroup>';
+    }
+    // 2. Por continente → país
+    if (g.continents) {
+      for (const [cont, countries] of Object.entries(g.continents)) {
+        html += `<optgroup label="── ${cont.toUpperCase()} ──">`;
+        for (const [country, ls] of Object.entries(countries)) {
+          ls.forEach(l => { const i = leaguesData.push(l) - 1; html += `<option value="${i}">${country} · ${l.name}</option>`; });
+        }
+        html += '</optgroup>';
+      }
+    }
+    return html;
+  };
+  const opts = buildOptions();
   $('hs-leagues').textContent = leaguesData.length;
-  const opts = '<option value="">Elige una competición…</option>' +
-    leaguesData.map((l,i) => `<option value="${i}">${l.name} — ${l.country || ''}</option>`).join('');
   $('league-sel').innerHTML = opts;
   $('fixture-league-sel').innerHTML = opts;
-  // Carga la primera liga automáticamente
   if (leaguesData.length) loadFixtures(0, 'home');
 }
 
 async function loadFixtures(idx, target) {
   const l = leaguesData[idx];
   if (!l) return;
-  const data = await fetch(`/api/fixtures?league=${l.id}&season=${l.season}&days=21`).then(r => r.json());
-  const fx = data.fixtures || [];
+  const data = await fetch(`/api/fixtures?league=${l.id}&season=${l.season}&days=30`).then(r => r.json());
+  const fx = (data.fixtures || []).map(f => ({ ...f, _season: l.season, _league: l.id }));
   if (target === 'home') renderFixturesHome(fx);
   else renderFixturesList(fx);
 }
@@ -73,13 +96,13 @@ function renderFixturesHome(fx) {
     const d = new Date(f.date);
     const ds = d.toLocaleDateString('es-CO', { weekday:'short', day:'numeric', month:'short' });
     const ts = d.toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
-    return `<div class="fx-card" onclick="selectMatch('${esc(f.home.name)}','${esc(f.away.name)}')">
+    return `<div class="fx-card" onclick="openMatch(${f.fixture_id||0}, '${esc(f.home.name)}', '${esc(f.away.name)}', ${f.home.id||0}, ${f.away.id||0}, ${f._season||2024})">
       <div class="fx-round">${f.round || '—'}</div>
       <div class="fx-matchup">
         <div class="fx-team">${f.home.logo ? `<img src="${f.home.logo}" alt="">` : ''}<span class="fx-team-name">${f.home.name}</span></div>
         <div class="fx-team">${f.away.logo ? `<img src="${f.away.logo}" alt="">` : ''}<span class="fx-team-name">${f.away.name}</span></div>
       </div>
-      <div class="fx-foot"><span>${ds} · ${ts}</span><span class="fx-cta">Analizar →</span></div>
+      <div class="fx-foot"><span>${ds} · ${ts}</span><span class="fx-cta">Ver partido →</span></div>
     </div>`;
   }).join('');
 }
@@ -91,11 +114,11 @@ function renderFixturesList(fx) {
     const d = new Date(f.date);
     const ds = d.toLocaleDateString('es-CO', { day:'numeric', month:'short' });
     const ts = d.toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
-    return `<div class="fxl-item" onclick="selectMatch('${esc(f.home.name)}','${esc(f.away.name)}')">
+    return `<div class="fxl-item" onclick="openMatch(${f.fixture_id||0}, '${esc(f.home.name)}', '${esc(f.away.name)}', ${f.home.id||0}, ${f.away.id||0}, ${f._season||2024})">
       <div class="fxl-home">${f.home.logo ? `<img class="fxl-img" src="${f.home.logo}" alt="">` : ''}<span class="fxl-name">${f.home.name}</span></div>
       <div class="fxl-center"><div class="fxl-date">${ds}</div><div class="fxl-time">${ts}</div></div>
       <div class="fxl-away"><span class="fxl-name">${f.away.name}</span>${f.away.logo ? `<img class="fxl-img" src="${f.away.logo}" alt="">` : ''}</div>
-      <div class="fxl-action">Analizar →</div>
+      <div class="fxl-action">Ver partido →</div>
     </div>`;
   }).join('');
 }
@@ -217,10 +240,77 @@ function renderResults(data) {
     <div class="section-header" style="padding:1rem 2rem"><span class="sh-num">03</span><h2 class="sh-title">DESGLOSE</h2><div class="sh-line"></div></div>
     <div class="factors-grid" style="margin:0 2rem 2rem">${factorsHTML}</div>
     ${kpHTML}
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">05</span><h2 class="sh-title">DATOS CRUDOS</h2><div class="sh-line"></div></div>
+    ${buildDetailPanels(pred, a, b)}
     <div class="cta-banca">
       <p>¿Hay valor en este partido? Lleva estas probabilidades al módulo de Banca y deja que Kelly calcule cuánto apostar.</p>
       <button onclick="sendToKelly(${p.p_win_a},${p.p_draw},${p.p_win_b},'${esc(a)}','${esc(b)}')">IR A BANCA →</button>
     </div>`;
+}
+
+/* ═══ PANELES DE DATOS CRUDOS (desplegables) ═══ */
+function buildDetailPanels(pred, a, b) {
+  const raw = pred.raw || {};
+  const s = pred.scores;
+  let html = '';
+
+  // Panel 1: ELO numérico
+  const eloA = raw.elo_a, eloB = raw.elo_b;
+  if (eloA != null || eloB != null) {
+    const diff = (eloA && eloB) ? Math.abs(eloA - eloB) : null;
+    const fav = (eloA && eloB) ? (eloA > eloB ? a : b) : '—';
+    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+      <span class="dp-title"><span class="dp-icon">▦</span>Ranking ELO (número real)</span><span class="dp-chevron">▾</span></div>
+      <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
+        <div class="elo-side"><div class="elo-num a">${eloA ?? '—'}</div><div class="elo-team">${a}</div></div>
+        <div class="elo-diff"><strong>${diff ?? '—'}</strong>de diferencia<br><span style="color:var(--lime)">${fav} favorito</span></div>
+        <div class="elo-side"><div class="elo-num b">${eloB ?? '—'}</div><div class="elo-team">${b}</div></div>
+      </div><div class="elo-src">Fuente: eloratings.net / clubelo.com</div></div></div></div>`;
+  }
+
+  // Panel 2: Últimos partidos (forma)
+  const formA = raw.form_a, formB = raw.form_b;
+  if (formA || formB) {
+    const dots = (form) => (form || []).slice(0,10).map(r => `<span class="fdot ${r}">${r}</span>`).join('');
+    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+      <span class="dp-title"><span class="dp-icon">◷</span>Últimos partidos</span><span class="dp-chevron">▾</span></div>
+      <div class="dp-body"><div class="dp-inner">
+        <div class="form-row"><span class="form-team-lbl">${a}</span><div class="form-dots">${dots(formA)}</div></div>
+        <div class="form-row"><span class="form-team-lbl">${b}</span><div class="form-dots">${dots(formB)}</div></div>
+        <p style="font-family:var(--ff-mono);font-size:0.6rem;color:#555;margin-top:0.8rem">W = victoria · D = empate · L = derrota · del más reciente al más antiguo</p>
+      </div></div></div>`;
+  }
+
+  // Panel 3: Valor de mercado de la plantilla
+  const mvA = raw.market_value_a, mvB = raw.market_value_b;
+  if (mvA != null || mvB != null) {
+    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+      <span class="dp-title"><span class="dp-icon">$</span>Valor de plantilla</span><span class="dp-chevron">▾</span></div>
+      <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
+        <div class="elo-side"><div class="elo-num a" style="font-size:2rem">${fmtMV(mvA)}</div><div class="elo-team">${a}</div></div>
+        <div class="elo-diff"><span style="color:var(--lime)">Transfermarkt</span></div>
+        <div class="elo-side"><div class="elo-num b" style="font-size:2rem">${fmtMV(mvB)}</div><div class="elo-team">${b}</div></div>
+      </div></div></div></div>`;
+  }
+
+  // Panel 4: Head to head
+  const h2h = raw.h2h_summary;
+  if (h2h) {
+    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+      <span class="dp-title"><span class="dp-icon">⚔</span>Head to Head</span><span class="dp-chevron">▾</span></div>
+      <div class="dp-body"><div class="dp-inner"><p style="font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted);line-height:1.7">${typeof h2h === 'string' ? h2h : JSON.stringify(h2h)}</p></div></div></div>`;
+  }
+
+  if (!html) html = '<p style="padding:0 2rem 2rem;color:#555;font-family:var(--ff-mono);font-size:0.75rem">Los datos crudos detallados se muestran cuando el análisis los provee.</p>';
+  return html;
+}
+
+function fmtMV(v) {
+  if (v == null) return '—';
+  if (v >= 1e9) return '€' + (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '€' + (v/1e6).toFixed(0) + 'M';
+  if (v >= 1e3) return '€' + (v/1e3).toFixed(0) + 'K';
+  return '€' + v;
 }
 
 /* ═══ RADAR SVG ═══ */
@@ -355,4 +445,166 @@ function renderBT(d) {
         <span class="${m.correct?'bt-hit':'bt-miss'}">${m.correct?'✓':'✗'}</span>
       </div>`).join('')}
     </div>`;
+}
+
+/* ═══════════════ v4: DETALLE DE PARTIDO + CANCHA ═══════════════ */
+
+let currentMatch = null;
+
+$('match-back').addEventListener('click', () => goView('fixtures'));
+
+async function openMatch(fixtureId, home, away, homeId, awayId, season) {
+  currentMatch = { fixtureId, home, away, homeId, awayId, season };
+  $('match-title').textContent = `${home} vs ${away}`.toUpperCase();
+  goView('match');
+  const zone = $('match-detail-zone');
+  zone.innerHTML = '<div class="loading"><div class="ld-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Cargando alineaciones y datos…</p></div>';
+
+  // Intentar cargar alineaciones reales
+  let lineups = null;
+  if (fixtureId) {
+    try { lineups = await fetch(`/api/lineup/detailed/${fixtureId}?season=${season}`).then(r => r.json()); } catch {}
+  }
+
+  let html = '';
+
+  // Botón para analizar este partido
+  html += `<div style="padding:1.5rem 2rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
+    <button class="btn-run" onclick="selectMatch('${esc(home)}','${esc(away)}')">ANALIZAR ESTE PARTIDO ↗</button>
+    <span style="font-family:var(--ff-mono);font-size:0.7rem;color:var(--muted)">Corre el modelo de 5 señales sobre este enfrentamiento</span>
+  </div>`;
+
+  // Cancha con alineaciones
+  if (lineups && (lineups.home || lineups.away)) {
+    html += renderPitchSection(lineups, home, away);
+  } else {
+    html += `<div style="margin:0 2rem 2rem;padding:2rem;background:var(--gray-3);border:1px solid var(--border);text-align:center">
+      <p style="font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted);line-height:1.7">Las alineaciones confirmadas aparecen entre 20 y 40 minutos antes del partido.<br>Mientras tanto puedes analizar el enfrentamiento con el modelo.</p>
+    </div>`;
+  }
+
+  zone.innerHTML = html;
+  // Activar primera pestaña de cancha
+  const firstTab = zone.querySelector('.pitch-tab');
+  if (firstTab) firstTab.click();
+}
+
+function renderPitchSection(lineups, home, away) {
+  const hasHome = lineups.home && lineups.home.starters && lineups.home.starters.length;
+  const hasAway = lineups.away && lineups.away.starters && lineups.away.starters.length;
+  let html = `<div class="pitch-wrap"><div class="pitch-teams-tab">`;
+  if (hasHome) html += `<button class="pitch-tab" onclick="showPitch('home')">${home}</button>`;
+  if (hasAway) html += `<button class="pitch-tab" onclick="showPitch('away')">${away}</button>`;
+  html += `</div><div id="pitch-container"></div></div>`;
+  window._lineups = lineups;
+  return html;
+}
+
+function showPitch(side) {
+  document.querySelectorAll('.pitch-tab').forEach((t,i) => {
+    const isThis = (side === 'home' && i === 0) || (side === 'away' && (i === 1 || !document.querySelector('.pitch-tab:nth-child(2)')));
+  });
+  // marcar activa por texto
+  const tabs = document.querySelectorAll('.pitch-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  const lineup = window._lineups[side];
+  if (!lineup) return;
+  const idx = side === 'home' ? 0 : (tabs.length > 1 ? 1 : 0);
+  if (tabs[idx]) tabs[idx].classList.add('active');
+
+  const cont = $('pitch-container');
+  let dots = '';
+  (lineup.starters || []).forEach(p => {
+    const pos = gridToPosition(p.grid, side);
+    if (!pos) return;
+    const rating = p.rating ? parseFloat(p.rating) : null;
+    const rClass = rating ? (rating >= 7 ? 'high' : rating >= 6.5 ? 'mid' : 'low') : 'mid';
+    const shortName = (p.name || '').split(' ').slice(-1)[0];
+    dots += `<div class="player-dot" style="left:${pos.x}%;top:${pos.y}%" onclick="showPlayer(${p.id||0}, '${esc(p.name||'')}', '${p.pos||''}', ${p.number||0}, ${currentMatch.season})">
+      <div class="pd-circle">${p.number || '?'}</div>
+      <div class="pd-name">${shortName}</div>
+      ${rating ? `<div class="pd-rating ${rClass}">${rating.toFixed(1)}</div>` : ''}
+    </div>`;
+  });
+
+  cont.innerHTML = `
+    <div class="pitch">
+      <div class="pitch-box top"></div>
+      <div class="pitch-box bot"></div>
+      ${dots}
+    </div>
+    <div class="pitch-formation">Formación ${lineup.formation || '—'}</div>
+    ${lineup.coach ? `<div class="pitch-coach">DT: ${lineup.coach}</div>` : ''}`;
+}
+
+// Convierte el grid "fila:columna" de API-Football a coordenadas % en la cancha
+function gridToPosition(grid, side) {
+  if (!grid) return null;
+  const [row, col] = grid.split(':').map(Number);
+  if (!row) return null;
+  // row 1 = portero, filas suben hacia adelante. Máx ~5 filas.
+  const maxRows = 5;
+  // Equipo local ataca hacia arriba; visitante hacia abajo (en su propia pestaña, siempre de abajo a arriba)
+  const y = 92 - ((row - 1) / maxRows) * 80;  // portero abajo (92%), delanteros arriba
+  // columnas: distribuir horizontalmente. Asumimos hasta 5 por fila.
+  // Necesitamos saber cuántos hay en la fila; aproximamos con col sobre un máx típico
+  const x = col ? (col * 100) / (colsInRow(grid) + 1) : 50;
+  return { x, y };
+}
+
+// Cuenta cuántos jugadores comparten la misma fila (para distribuir columnas)
+let _rowCounts = {};
+function colsInRow(grid) {
+  const row = grid.split(':')[0];
+  if (window._lineups) {
+    const side = document.querySelector('.pitch-tab.active');
+    // contar en ambos por si acaso
+    let count = 0;
+    ['home','away'].forEach(s => {
+      const lu = window._lineups[s];
+      if (lu && lu.starters) {
+        const c = lu.starters.filter(p => p.grid && p.grid.split(':')[0] === row).length;
+        if (c > count) count = c;
+      }
+    });
+    return count || 4;
+  }
+  return 4;
+}
+
+async function showPlayer(id, name, pos, number, season) {
+  if (!id) return;
+  // popup
+  let pop = $('player-pop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'player-pop'; pop.className = 'player-pop';
+    document.body.appendChild(pop);
+  }
+  pop.className = 'player-pop show';
+  pop.innerHTML = `<div class="pp-card"><button class="pp-close" onclick="document.getElementById('player-pop').className='player-pop'">×</button>
+    <div class="pp-name">${name}</div><div class="pp-meta">Cargando datos…</div></div>`;
+
+  try {
+    const d = await fetch(`/api/player/${id}?season=${season}`).then(r => r.json());
+    const rating = d.rating ? parseFloat(d.rating).toFixed(2) : '—';
+    pop.querySelector('.pp-card').innerHTML = `
+      <button class="pp-close" onclick="document.getElementById('player-pop').className='player-pop'">×</button>
+      ${d.photo ? `<img class="pp-photo" src="${d.photo}" alt="">` : ''}
+      <div class="pp-name">${d.name || name}</div>
+      <div class="pp-meta">${d.position || pos || '—'} · ${d.age || '?'} años · ${d.nationality || ''}</div>
+      <div class="pp-stats">
+        <div class="pp-stat"><div class="pp-sv">${rating}</div><div class="pp-sl">rating temporada</div></div>
+        <div class="pp-stat"><div class="pp-sv">${d.appearances ?? '—'}</div><div class="pp-sl">partidos</div></div>
+        <div class="pp-stat"><div class="pp-sv">${d.goals ?? 0}</div><div class="pp-sl">goles</div></div>
+        <div class="pp-stat"><div class="pp-sv">${d.assists ?? 0}</div><div class="pp-sl">asistencias</div></div>
+      </div>`;
+  } catch {
+    pop.querySelector('.pp-meta').textContent = 'No se pudieron cargar los datos del jugador.';
+  }
+}
+
+/* ═══ PANELES DESPLEGABLES (toggle) ═══ */
+function togglePanel(el) {
+  el.closest('.detail-panel').classList.toggle('open');
 }

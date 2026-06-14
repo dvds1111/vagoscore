@@ -40,6 +40,40 @@ def leagues():
     return jsonify({"leagues": apif.get_current_leagues()})
 
 
+@app.route("/api/leagues/grouped")
+def leagues_grouped():
+    if not config.has_apifootball():
+        return jsonify({"error": "API-Football no configurada", "world": [], "continents": {}}), 200
+    return jsonify(apif.get_leagues_grouped())
+
+
+@app.route("/api/team/squad/<int:team_id>")
+def team_squad(team_id):
+    return jsonify({"squad": apif.get_team_squad_detailed(team_id)})
+
+
+@app.route("/api/team/stats")
+def team_stats():
+    team_id = request.args.get("team", type=int)
+    league_id = request.args.get("league", type=int)
+    season = request.args.get("season", type=int)
+    if not all([team_id, league_id, season]):
+        return jsonify({"error": "Faltan parámetros"}), 400
+    return jsonify(apif.get_team_statistics(team_id, league_id, season))
+
+
+@app.route("/api/lineup/detailed/<int:fixture_id>")
+def lineup_detailed(fixture_id):
+    season = request.args.get("season", type=int)
+    return jsonify(apif.get_lineup_with_values(fixture_id, season))
+
+
+@app.route("/api/player/<int:player_id>")
+def player_detail(player_id):
+    season = request.args.get("season", default=2024, type=int)
+    return jsonify(apif.get_player_season(player_id, season))
+
+
 @app.route("/api/fixtures")
 def fixtures():
     league_id = request.args.get("league", type=int)

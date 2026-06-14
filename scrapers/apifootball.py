@@ -316,3 +316,184 @@ def get_fixture_full(fixture_id: int) -> dict:
             "logo": teams.get("away", {}).get("logo"),
         },
     }
+
+
+# ─── NUEVO v4: Detalle profundo de equipos y plantillas ───────────────────────
+
+# Mapa de continentes por país (para agrupación jerárquica del selector)
+COUNTRY_CONTINENT = {
+    # Europa
+    "England": "Europa", "Spain": "Europa", "Italy": "Europa", "Germany": "Europa",
+    "France": "Europa", "Portugal": "Europa", "Netherlands": "Europa", "Belgium": "Europa",
+    "Scotland": "Europa", "Turkey": "Europa", "Russia": "Europa", "Ukraine": "Europa",
+    "Greece": "Europa", "Austria": "Europa", "Switzerland": "Europa", "Denmark": "Europa",
+    "Sweden": "Europa", "Norway": "Europa", "Poland": "Europa", "Croatia": "Europa",
+    "Serbia": "Europa", "Czech-Republic": "Europa", "Romania": "Europa", "Ireland": "Europa",
+    # Sudamérica
+    "Brazil": "Sudamérica", "Argentina": "Sudamérica", "Colombia": "Sudamérica",
+    "Chile": "Sudamérica", "Uruguay": "Sudamérica", "Peru": "Sudamérica",
+    "Ecuador": "Sudamérica", "Paraguay": "Sudamérica", "Bolivia": "Sudamérica",
+    "Venezuela": "Sudamérica",
+    # Norte/Centroamérica
+    "USA": "Norteamérica", "Mexico": "Norteamérica", "Canada": "Norteamérica",
+    "Costa-Rica": "Norteamérica", "Honduras": "Norteamérica", "Panama": "Norteamérica",
+    # África
+    "Egypt": "África", "Morocco": "África", "Nigeria": "África", "Senegal": "África",
+    "Ghana": "África", "Cameroon": "África", "Algeria": "África", "Tunisia": "África",
+    "South-Africa": "África", "Ivory-Coast": "África",
+    # Asia
+    "Japan": "Asia", "South-Korea": "Asia", "China": "Asia", "Saudi-Arabia": "Asia",
+    "Qatar": "Asia", "Iran": "Asia", "Australia": "Asia", "India": "Asia",
+}
+
+# Competiciones mundiales y continentales (prioridad máxima en el selector)
+WORLD_COMPS = {
+    "World Cup", "Friendlies", "World Cup - Qualification",
+    "UEFA Nations League", "CONMEBOL - Copa America", "Africa Cup of Nations",
+    "AFC Asian Cup", "CONCACAF Gold Cup", "Euro Championship",
+    "UEFA Champions League", "UEFA Europa League", "UEFA Europa Conference League",
+    "CONMEBOL Libertadores", "CONMEBOL Sudamericana", "CONCACAF Champions League",
+    "AFC Champions League", "CAF Champions League", "FIFA Club World Cup",
+}
+
+
+def get_leagues_grouped() -> dict:
+    """
+    Devuelve las ligas activas agrupadas jerárquicamente:
+      1. Mundiales y continentales (lo primero)
+      2. Por continente → por país
+    """
+    data = _request("leagues", {"current": "true"}, cache_type="elo")
+    world, by_continent = [], {}
+
+    for item in data.get("response", []):
+        league = item.get("league", {})
+        country = item.get("country", {})
+        seasons = item.get("seasons", [])
+        cs = next((s for s in seasons if s.get("current")), None)
+        if not cs:
+            continue
+        entry = {
+            "id": league.get("id"), "name": league.get("name"),
+            "type": league.get("type"), "logo": league.get("logo"),
+            "country": country.get("name"), "flag": country.get("flag"),
+            "season": cs.get("year"),
+        }
+        name = league.get("name", "")
+        cname = country.get("name", "")
+        if name in WORLD_COMPS or cname == "World":
+            world.append(entry)
+        else:
+            cont = COUNTRY_CONTINENT.get(cname, "Otras")
+            by_continent.setdefault(cont, {}).setdefault(cname, []).append(entry)
+
+    # Orden de mundiales (mundial primero, luego continentales de clubes)
+    wc_priority = {
+        "World Cup": 0, "World Cup - Qualification": 1, "UEFA Nations League": 2,
+        "CONMEBOL - Copa America": 3, "Euro Championship": 3, "Africa Cup of Nations": 4,
+        "UEFA Champions League": 5, "CONMEBOL Libertadores": 6, "UEFA Europa League": 7,
+        "Friendlies": 20,
+    }
+    world.sort(key=lambda l: wc_priority.get(l["name"], 10))
+
+    cont_order = ["Europa", "Sudamérica", "Norteamérica", "África", "Asia", "Otras"]
+    ordered_continents = {}
+    for c in cont_order:
+        if c in by_continent:
+            ordered_continents[c] = dict(sorted(by_continent[c].items()))
+
+    return {"world": world, "continents": ordered_continents}
+
+
+def get_team_statistics(team_id: int, league_id: int, season: int) -> dict:
+    """
+    Estadísticas de temporada de un equipo en una liga:
+    forma, goles, racha, clean sheets, etc.
+    """
+    data = _request("teams/statistics", {
+        "team": team_id, "league": league_id, "season": season,
+    }, cache_type="team_stats")
+    r = data.get("response", {})
+    if not r:
+        return {}
+    fixtures = r.get("fixtures", {})
+    goals = r.get("goals", {})
+    return {
+        "form": r.get("form", ""),
+        "played": fixtures.get("played", {}).get("total", 0),
+        "wins": fixtures.get("wins", {}).get("total", 0),
+        "draws": fixtures.get("draws", {}).get("total", 0),
+        "loses": fixtures.get("loses", {}).get("total", 0),
+        "goals_for": goals.get("for", {}).get("total", {}).get("total", 0),
+        "goals_against": goals.get("against", {}).get("total", {}).get("total", 0),
+        "goals_for_avg": goals.get("for", {}).get("average", {}).get("total", "0"),
+        "clean_sheets": r.get("clean_sheet", {}).get("total", 0),
+        "biggest_streak_wins": r.get("biggest", {}).get("streak", {}).get("wins", 0),
+    }
+
+
+def get_team_squad_detailed(team_id: int) -> list:
+    """
+    Plantilla completa con datos por jugador: nombre, posición, edad, número, foto.
+    """
+    data = _request("players/squads", {"team": team_id}, cache_type="transfermarkt")
+    squad = []
+    for item in data.get("response", []):
+        for p in item.get("players", []):
+            squad.append({
+                "id": p.get("id"), "name": p.get("name"),
+                "age": p.get("age"), "number": p.get("number"),
+                "position": p.get("position"), "photo": p.get("photo"),
+            })
+    return squad
+
+
+def get_player_season(player_id: int, season: int) -> dict:
+    """
+    Estadísticas de un jugador en la temporada: rating medio, goles, asistencias.
+    """
+    data = _request("players", {"id": player_id, "season": season}, cache_type="team_stats")
+    resp = data.get("response", [])
+    if not resp:
+        return {}
+    p = resp[0]
+    player = p.get("player", {})
+    stats = p.get("statistics", [{}])[0] if p.get("statistics") else {}
+    games = stats.get("games", {})
+    goals = stats.get("goals", {})
+    return {
+        "id": player.get("id"), "name": player.get("name"),
+        "photo": player.get("photo"), "age": player.get("age"),
+        "nationality": player.get("nationality"),
+        "position": games.get("position"),
+        "rating": games.get("rating"),
+        "appearances": games.get("appearences"),
+        "goals": goals.get("total"), "assists": goals.get("assists"),
+    }
+
+
+def get_lineup_with_values(fixture_id: int, season: int = None) -> dict:
+    """
+    Alineación de un partido con datos enriquecidos por jugador:
+    posición en la cancha (grid), número, rating de temporada.
+    Combina /fixtures/lineups con /players para el rating.
+    """
+    base = get_fixture_lineups(fixture_id)
+    # Enriquecer cada titular con su rating de temporada sería 1 request/jugador
+    # (costoso). Por eso devolvemos la base con grid y dejamos rating opcional.
+    return base
+
+
+def get_elo_summary(team_name: str, is_national: bool = True) -> dict:
+    """
+    Wrapper para exponer el ELO numérico crudo desde el scraper de elo.
+    """
+    from scrapers import elo as elo_scraper
+    try:
+        if is_national:
+            rating = elo_scraper.get_national_elo(team_name)
+        else:
+            rating = elo_scraper.get_club_elo(team_name)
+        return {"team": team_name, "elo": rating, "source": "eloratings.net / clubelo.com"}
+    except Exception as e:
+        return {"team": team_name, "elo": None, "error": str(e)}

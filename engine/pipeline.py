@@ -134,6 +134,47 @@ def run_prediction(
         weights=weights,
     )
     results["prediction"] = prediction
+
+    # ── Bloque de datos crudos consolidado para el frontend ──
+    raw = prediction.get("raw", {}) if isinstance(prediction, dict) else {}
+    raw["elo_a"] = elo_a.get("elo") if isinstance(elo_a, dict) else elo_a
+    raw["elo_b"] = elo_b.get("elo") if isinstance(elo_b, dict) else elo_b
+    # Valor de mercado en euros (total_value_m está en millones)
+    mva = market_a.get("total_value_m") if isinstance(market_a, dict) else None
+    mvb = market_b.get("total_value_m") if isinstance(market_b, dict) else None
+    raw["market_value_a"] = round(mva * 1_000_000) if mva else None
+    raw["market_value_b"] = round(mvb * 1_000_000) if mvb else None
+    # Forma reciente (resultados W/D/L) desde H2H o sofascore si está disponible
+    raw["form_a"] = sofa_a.get("recent_form") if isinstance(sofa_a, dict) else None
+    raw["form_b"] = sofa_b.get("recent_form") if isinstance(sofa_b, dict) else None
+    # Jugador clave (mejor rating de cada equipo)
+    raw["key_player_a"] = _best_player(sofa_a)
+    raw["key_player_b"] = _best_player(sofa_b)
+    # H2H resumen legible
+    if h2h_data and h2h_data.get("total"):
+        raw["h2h_summary"] = f"{h2h_data.get('total', 0)} enfrentamientos registrados en el historial reciente."
+    if isinstance(prediction, dict):
+        prediction["raw"] = raw
+
     log("¡Predicción lista!", 100)
 
     return results
+
+
+def _best_player(sofa_data):
+    """Extrae el jugador con mejor rating de un equipo."""
+    if not isinstance(sofa_data, dict):
+        return None
+    players = sofa_data.get("players", [])
+    if not players:
+        return None
+    try:
+        best = max(players, key=lambda p: p.get("avg_rating", 0) or 0)
+        return {
+            "name": best.get("name", "—"),
+            "avg_rating": best.get("avg_rating", 0),
+            "position": best.get("position", "?"),
+            "matches": best.get("matches", 0),
+        }
+    except (ValueError, TypeError):
+        return None
