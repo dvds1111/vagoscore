@@ -1,310 +1,358 @@
-const $ = (id) => document.getElementById(id);
-const fmt = (n, cur) => new Intl.NumberFormat('es-CO').format(Math.round(n)) + (cur ? ' ' + cur : '');
+/* VagoScore v3 — app.js */
+const $ = id => document.getElementById(id);
+const fmtNum = (n, cur='') => new Intl.NumberFormat('es-CO').format(Math.round(n)) + (cur ? ' ' + cur : '');
 
-let isNational = true;
-let lastAnalysis = null;
+let isNational = true, lastPred = null, leaguesData = [];
+const LOAD_MSGS = ['Conectando con Sofascore…','Leyendo forma reciente…','Consultando Transfermarkt…','Calculando ELO…','Analizando H2H…','Midiendo química…','Fusionando señales…','Calculando probabilidades…'];
 
-// ═══════ NAV ENTRE VISTAS ═══════
-$('nav-tabs').addEventListener('click', (e) => {
-  const tab = e.target.closest('.tab');
-  if (!tab) return;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  tab.classList.add('active');
-  $('view-' + tab.dataset.view).classList.add('active');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+/* ═══ NAV ═══ */
+document.querySelectorAll('.nl').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nl').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    $('view-' + btn.dataset.view).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 });
-
-function goToView(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
+function goView(name) {
+  document.querySelectorAll('.nl').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   $('view-' + name).classList.add('active');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+$('hero-cta').addEventListener('click', () => goView('fixtures'));
 
-// ═══════ ESTADO DEL SISTEMA ═══════
-async function loadStatus() {
+/* ═══ STATUS + INIT ═══ */
+async function init() {
+  $('hero-date').textContent = new Date().toLocaleDateString('es-CO', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
   try {
-    const r = await fetch('/api/status');
-    const s = await r.json();
+    const s = await fetch('/api/status').then(r => r.json());
     if (s.apifootball_connected) {
-      $('status-dot').className = 'status-dot on';
-      $('status-text').textContent = 'API conectada';
-      loadLeagues();
+      $('sdot').className = 'sdot on'; $('stext').textContent = 'API conectada';
+      await loadLeagues();
+      loadLive();
     } else {
-      $('status-dot').className = 'status-dot off';
-      $('status-text').textContent = 'sin API-Football';
-      $('fixtures-hint').textContent = 'Configura tu clave de API-Football (variable APIFOOTBALL_KEY) para explorar partidos en tiempo real. Mientras tanto, puedes usar Análisis, Banca y Backtest manualmente.';
+      $('sdot').className = 'sdot off'; $('stext').textContent = 'sin API-Football';
+      $('hs-leagues').textContent = '—';
+      $('fixtures-home').innerHTML = '<div style="padding:2rem;color:#666;font-family:var(--ff-mono);font-size:0.8rem">Configura APIFOOTBALL_KEY en Render para ver partidos en tiempo real.</div>';
     }
-  } catch {
-    $('status-dot').className = 'status-dot off';
-    $('status-text').textContent = 'sin conexión';
-  }
+  } catch { $('sdot').className = 'sdot off'; $('stext').textContent = 'sin conexión'; }
 }
-loadStatus();
+init();
 
-// ═══════ VISTA 1: LIGAS Y PARTIDOS ═══════
-let leaguesData = [];
+/* ═══ LEAGUES + FIXTURES ═══ */
 async function loadLeagues() {
-  try {
-    const r = await fetch('/api/leagues');
-    const data = await r.json();
-    leaguesData = data.leagues || [];
-    const sel = $('league-select');
-    if (!leaguesData.length) { sel.innerHTML = '<option value="">No hay ligas disponibles</option>'; return; }
-    sel.innerHTML = '<option value="">Elige una competición…</option>' +
-      leaguesData.map((l, i) => `<option value="${i}">${l.name} — ${l.country}</option>`).join('');
-  } catch (e) {
-    $('league-select').innerHTML = '<option value="">Error al cargar</option>';
-  }
+  const d = await fetch('/api/leagues').then(r => r.json());
+  leaguesData = d.leagues || [];
+  $('hs-leagues').textContent = leaguesData.length;
+  const opts = '<option value="">Elige una competición…</option>' +
+    leaguesData.map((l,i) => `<option value="${i}">${l.name} — ${l.country || ''}</option>`).join('');
+  $('league-sel').innerHTML = opts;
+  $('fixture-league-sel').innerHTML = opts;
+  // Carga la primera liga automáticamente
+  if (leaguesData.length) loadFixtures(0, 'home');
 }
 
-$('league-select').addEventListener('change', async (e) => {
-  const idx = e.target.value;
-  if (idx === '') return;
-  const league = leaguesData[idx];
-  const grid = $('fixtures-grid');
-  grid.innerHTML = '<div class="empty-hint">Cargando partidos…</div>';
-  try {
-    const r = await fetch(`/api/fixtures?league=${league.id}&season=${league.season}&days=21`);
-    const data = await r.json();
-    renderFixtures(data.fixtures || []);
-  } catch {
-    grid.innerHTML = '<div class="empty-hint">No se pudieron cargar los partidos.</div>';
-  }
-});
+async function loadFixtures(idx, target) {
+  const l = leaguesData[idx];
+  if (!l) return;
+  const data = await fetch(`/api/fixtures?league=${l.id}&season=${l.season}&days=21`).then(r => r.json());
+  const fx = data.fixtures || [];
+  if (target === 'home') renderFixturesHome(fx);
+  else renderFixturesList(fx);
+}
 
-function renderFixtures(fixtures) {
-  const grid = $('fixtures-grid');
-  if (!fixtures.length) { grid.innerHTML = '<div class="empty-hint">No hay partidos próximos en esta competición.</div>'; return; }
-  grid.innerHTML = '';
-  fixtures.slice(0, 24).forEach(fx => {
-    const date = new Date(fx.date);
-    const dateStr = date.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const card = document.createElement('div');
-    card.className = 'fixture-card';
-    card.innerHTML = `
-      <div class="fx-round">${fx.round || 'Próximo partido'}</div>
-      <div class="fx-teams">
-        <div class="fx-team"><img src="${fx.home.logo}" alt=""><span>${fx.home.name}</span></div>
-        <div class="fx-team"><img src="${fx.away.logo}" alt=""><span>${fx.away.name}</span></div>
+$('league-sel').addEventListener('change', e => { if (e.target.value !== '') loadFixtures(+e.target.value, 'home'); });
+$('fixture-league-sel').addEventListener('change', e => { if (e.target.value !== '') loadFixtures(+e.target.value, 'list'); });
+
+function renderFixturesHome(fx) {
+  const el = $('fixtures-home');
+  if (!fx.length) { el.innerHTML = '<div style="padding:2rem;color:#666;font-family:var(--ff-mono);font-size:0.8rem">Sin partidos próximos.</div>'; return; }
+  el.innerHTML = fx.slice(0, 12).map(f => {
+    const d = new Date(f.date);
+    const ds = d.toLocaleDateString('es-CO', { weekday:'short', day:'numeric', month:'short' });
+    const ts = d.toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
+    return `<div class="fx-card" onclick="selectMatch('${esc(f.home.name)}','${esc(f.away.name)}')">
+      <div class="fx-round">${f.round || '—'}</div>
+      <div class="fx-matchup">
+        <div class="fx-team">${f.home.logo ? `<img src="${f.home.logo}" alt="">` : ''}<span class="fx-team-name">${f.home.name}</span></div>
+        <div class="fx-team">${f.away.logo ? `<img src="${f.away.logo}" alt="">` : ''}<span class="fx-team-name">${f.away.name}</span></div>
       </div>
-      <div class="fx-meta"><span>${dateStr}</span><span class="fx-cta">Analizar →</span></div>`;
-    card.addEventListener('click', () => {
-      $('team-a').value = fx.home.name;
-      $('team-b').value = fx.away.name;
-      goToView('analyze');
-    });
-    grid.appendChild(card);
-  });
+      <div class="fx-foot"><span>${ds} · ${ts}</span><span class="fx-cta">Analizar →</span></div>
+    </div>`;
+  }).join('');
 }
 
-// ═══════ VISTA 2: ANÁLISIS ═══════
-$('type-toggle').addEventListener('click', (e) => {
-  const btn = e.target.closest('.toggle-opt');
+function renderFixturesList(fx) {
+  const el = $('fixtures-list');
+  if (!fx.length) { el.innerHTML = '<div style="padding:2rem;color:#666;font-family:var(--ff-mono);font-size:0.8rem">Sin partidos próximos en esta competición.</div>'; return; }
+  el.innerHTML = fx.map(f => {
+    const d = new Date(f.date);
+    const ds = d.toLocaleDateString('es-CO', { day:'numeric', month:'short' });
+    const ts = d.toLocaleTimeString('es-CO', { hour:'2-digit', minute:'2-digit' });
+    return `<div class="fxl-item" onclick="selectMatch('${esc(f.home.name)}','${esc(f.away.name)}')">
+      <div class="fxl-home">${f.home.logo ? `<img class="fxl-img" src="${f.home.logo}" alt="">` : ''}<span class="fxl-name">${f.home.name}</span></div>
+      <div class="fxl-center"><div class="fxl-date">${ds}</div><div class="fxl-time">${ts}</div></div>
+      <div class="fxl-away"><span class="fxl-name">${f.away.name}</span>${f.away.logo ? `<img class="fxl-img" src="${f.away.logo}" alt="">` : ''}</div>
+      <div class="fxl-action">Analizar →</div>
+    </div>`;
+  }).join('');
+}
+
+function selectMatch(home, away) {
+  $('ta').value = home; $('tb').value = away;
+  goView('analyze');
+}
+function esc(s) { return (s||'').replace(/'/g, "\\'"); }
+
+/* ═══ LIVE ═══ */
+async function loadLive() {
+  try {
+    const d = await fetch('/api/live').then(r => r.json());
+    const live = d.live || [];
+    $('hs-live').textContent = live.length;
+    if (live.length) {
+      $('live-badge').hidden = false;
+      $('live-strip').hidden = false;
+      $('ls-scroll').innerHTML = live.map(m => `<div class="ls-match"><span>${m.home}</span><span class="ls-score">${m.score}</span><span>${m.away}</span><span class="ls-min">${m.elapsed}'</span></div>`).join('');
+    }
+  } catch {}
+}
+
+/* ═══ ANALYZE ═══ */
+$('seg').addEventListener('click', e => {
+  const btn = e.target.closest('.seg-opt');
   if (!btn) return;
-  document.querySelectorAll('#type-toggle .toggle-opt').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.seg-opt').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  isNational = btn.dataset.national === 'true';
+  isNational = btn.dataset.nat === 'true';
 });
 
-const loadingMsgs = ['Conectando con Sofascore…','Leyendo forma reciente…','Consultando Transfermarkt…','Calculando ELO…','Analizando head-to-head…','Midiendo química…','Fusionando señales…','Calculando probabilidades…'];
-let loadingTimer = null;
+let ldTimer = null;
 $('run-btn').addEventListener('click', runAnalysis);
 
 async function runAnalysis() {
-  const teamA = $('team-a').value.trim(), teamB = $('team-b').value.trim();
-  if (!teamA || !teamB) { alert('Escribe ambos equipos.'); return; }
-
-  $('analysis-results').hidden = true;
-  $('loading-zone').hidden = false;
-  let i = 0;
-  $('loading-msg').textContent = loadingMsgs[0];
-  loadingTimer = setInterval(() => { i = (i+1) % loadingMsgs.length; $('loading-msg').textContent = loadingMsgs[i]; }, 2000);
-
+  const a = $('ta').value.trim(), b = $('tb').value.trim();
+  if (!a || !b) { alert('Escribe ambos equipos.'); return; }
+  $('results-zone').hidden = true;
+  $('loading').hidden = false;
+  let i = 0; $('ld-msg').textContent = LOAD_MSGS[0];
+  ldTimer = setInterval(() => { i=(i+1)%LOAD_MSGS.length; $('ld-msg').textContent = LOAD_MSGS[i]; }, 2000);
   try {
-    const resp = await fetch('/api/predict', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ team_a: teamA, team_b: teamB, is_national: isNational }),
-    });
-    const data = await resp.json();
-    clearInterval(loadingTimer);
-    $('loading-zone').hidden = true;
+    const data = await fetch('/api/predict', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ team_a:a, team_b:b, is_national:isNational })
+    }).then(r => r.json());
+    clearInterval(ldTimer);
+    $('loading').hidden = true;
     if (data.error) throw new Error(data.error);
-    lastAnalysis = data;
-    renderAnalysis(data);
-    $('analysis-results').hidden = false;
-  } catch (err) {
-    clearInterval(loadingTimer);
-    $('loading-zone').hidden = true;
+    lastPred = data;
+    renderResults(data);
+    $('results-zone').hidden = false;
+  } catch(err) {
+    clearInterval(ldTimer);
+    $('loading').hidden = true;
     alert('Error: ' + err.message);
   }
 }
 
-function renderAnalysis(data) {
+function renderResults(data) {
   const pred = data.prediction, p = pred.prediction, s = pred.scores;
   const a = data.team_a, b = data.team_b;
 
-  const factorDefs = [
-    ['sofascore','Forma reciente', pred.weights_used.sofascore_form],
-    ['elo','Ranking ELO', pred.weights_used.elo_rating],
-    ['chemistry','Química de alineación', pred.weights_used.chemistry],
-    ['h2h','Head-to-Head', pred.weights_used.h2h],
-    ['market','Valor de mercado', pred.weights_used.market_value],
+  // Radar SVG
+  const factors = [
+    [s[a].sofascore, s[b].sofascore, 'FORMA'],
+    [s[a].elo,       s[b].elo,       'ELO'],
+    [s[a].chemistry, s[b].chemistry, 'QUÍMICA'],
+    [s[a].h2h,       s[b].h2h,       'H2H'],
+    [s[a].market,    s[b].market,    'VALOR'],
   ];
-  let factorsHTML = '';
-  factorDefs.forEach(([k,name,w]) => {
+  const radarHTML = buildRadar(factors, a, b);
+
+  // Factores
+  const fNames = { sofascore:'Forma reciente', elo:'Ranking ELO', chemistry:'Química', h2h:'Head-to-Head', market:'Valor mercado' };
+  const fwKey = { sofascore:'sofascore_form', elo:'elo_rating', chemistry:'chemistry', h2h:'h2h', market:'market_value' };
+  const fWeights = pred.weights_used;
+  const factorsHTML = ['sofascore','elo','chemistry','h2h','market'].map(k => {
     const va = s[a][k], vb = s[b][k];
-    factorsHTML += `<div class="factor"><div class="factor-top"><span class="factor-name">${name}</span><span class="factor-weight">peso ${Math.round(w*100)}%</span></div>
-      <div class="fbars">
-        <div class="fbar l"><div class="fbar-fill" style="width:${va}%"></div><span class="fbar-num">${va.toFixed(0)}</span></div>
-        <div class="fbar r"><div class="fbar-fill" style="width:${vb}%"></div><span class="fbar-num">${vb.toFixed(0)}</span></div>
-      </div></div>`;
-  });
+    const w = Math.round((fWeights[fwKey[k]] || 0) * 100);
+    return `<div class="factor"><div class="factor-head"><span class="factor-name">${fNames[k]}</span><span class="factor-w">peso ${w}%</span></div>
+      <div class="factor-bars"><div class="fbar l"><div class="fbar-fill" style="width:${va}%"></div><span class="fbar-n">${va.toFixed(0)}</span></div>
+      <div class="fbar r"><div class="fbar-fill" style="width:${vb}%"></div><span class="fbar-n">${vb.toFixed(0)}</span></div></div></div>`;
+  }).join('');
 
   const raw = pred.raw || {};
-  let kpHTML = '';
-  [[a, raw.key_player_a],[b, raw.key_player_b]].forEach(([team,kp]) => {
-    if (!kp) return;
-    kpHTML += `<div class="kp-card"><span class="kp-team">${team}</span><div class="kp-name">${kp.name||'—'}</div><span class="kp-rating">${(kp.avg_rating||0).toFixed(2)} ★</span><div style="font-size:0.74rem;color:var(--txt-dim);margin-top:0.3rem">${kp.position||'n/d'} · ${kp.matches||0} partidos</div></div>`;
-  });
+  const kpA = raw.key_player_a, kpB = raw.key_player_b;
+  const kpHTML = (kpA || kpB) ? `
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">04</span><h2 class="sh-title">JUGADORES CLAVE</h2><div class="sh-line"></div></div>
+    <div class="kp-strip">
+      ${kpA ? `<div class="kp-card"><div class="kp-team">${a}</div><div class="kp-name">${kpA.name||'—'}</div><div class="kp-rat">${(kpA.avg_rating||0).toFixed(2)} ★ · ${kpA.position||'?'}</div></div>` : '<div class="kp-card"></div>'}
+      ${kpB ? `<div class="kp-card"><div class="kp-team">${b}</div><div class="kp-name">${kpB.name||'—'}</div><div class="kp-rat">${(kpB.avg_rating||0).toFixed(2)} ★ · ${kpB.position||'?'}</div></div>` : '<div class="kp-card"></div>'}
+    </div>` : '';
 
-  $('analysis-results').innerHTML = `
-    <div class="glass verdict-card">
-      <div class="verdict-row">
-        <div class="vteam"><div class="vteam-name">${a}</div><div class="vteam-score a">${s[a].total.toFixed(1)}</div><div class="vteam-tag">vagoscore</div></div>
-        <div class="vcenter"><span class="vcenter-lbl">marcador probable</span><span class="vscore">${p.most_likely_score}</span><span class="vconf">confianza ${p.confidence}%</span></div>
-        <div class="vteam"><div class="vteam-name">${b}</div><div class="vteam-score b">${s[b].total.toFixed(1)}</div><div class="vteam-tag">vagoscore</div></div>
-      </div>
-      <div class="prob-bar">
-        <div class="pseg a" style="flex-basis:${p.p_win_a}%">${p.p_win_a}%</div>
-        <div class="pseg d" style="flex-basis:${p.p_draw}%">${p.p_draw}%</div>
-        <div class="pseg b" style="flex-basis:${p.p_win_b}%">${p.p_win_b}%</div>
-      </div>
-      <div class="prob-legend"><span><i style="background:var(--lime)"></i>Gana ${a}</span><span><i style="background:var(--amber)"></i>Empate</span><span><i style="background:var(--cyan)"></i>Gana ${b}</span></div>
-      <div class="xg-row"><div class="xg-card"><div class="xg-val">${p.xg_a}</div><div class="xg-lbl">xG ${a}</div></div><div class="xg-card"><div class="xg-val">${p.xg_b}</div><div class="xg-lbl">xG ${b}</div></div></div>
+  $('results-zone').innerHTML = `
+    <div class="res-hero">
+      <div class="res-team"><div class="res-team-name">${a}</div><div class="res-score a">${s[a].total.toFixed(1)}</div><div class="res-tag">vagoscore</div></div>
+      <div class="res-center"><span class="res-vs-label">marcador probable</span><span class="res-predicted">${p.most_likely_score}</span><span class="res-conf">confianza ${p.confidence}%</span></div>
+      <div class="res-team"><div class="res-team-name">${b}</div><div class="res-score b">${s[b].total.toFixed(1)}</div><div class="res-tag">vagoscore</div></div>
     </div>
-    <div class="section-title">Desglose por señal</div>
-    <div class="factors">${factorsHTML}</div>
-    ${kpHTML ? `<div class="section-title">Jugadores clave</div><div class="kp-grid">${kpHTML}</div>` : ''}
-    <div class="glass cta-bankroll">
-      <p><strong>¿Y cuánto apostar?</strong> Lleva estas probabilidades al módulo de Banca y deja que el criterio de Kelly calcule el tamaño óptimo según tu capital.</p>
-      <button class="btn-primary" id="to-bankroll">Gestionar banca <span>→</span></button>
+    <div class="prob-bar">
+      <div class="pb-seg pb-a" style="flex-basis:${p.p_win_a}%">${p.p_win_a}%</div>
+      <div class="pb-seg pb-d" style="flex-basis:${p.p_draw}%">${p.p_draw}%</div>
+      <div class="pb-seg pb-b" style="flex-basis:${p.p_win_b}%">${p.p_win_b}%</div>
+    </div>
+    <div class="prob-legend">
+      <span><i style="background:var(--lime)"></i>Gana ${a} ${p.p_win_a}%</span>
+      <span><i style="background:#444"></i>Empate ${p.p_draw}%</span>
+      <span><i style="background:var(--white);opacity:0.3"></i>Gana ${b} ${p.p_win_b}%</span>
+    </div>
+    <div class="xg-strip">
+      <div class="xg-block"><div class="xg-num">${p.xg_a}</div><div class="xg-lbl">xG ${a}</div></div>
+      <div class="xg-block"><div class="xg-num">${p.xg_b}</div><div class="xg-lbl">xG ${b}</div></div>
+    </div>
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">02</span><h2 class="sh-title">RADAR DE SEÑALES</h2><div class="sh-line"></div></div>
+    <div class="radar-wrap">${radarHTML}</div>
+    <div class="section-header" style="padding:1rem 2rem"><span class="sh-num">03</span><h2 class="sh-title">DESGLOSE</h2><div class="sh-line"></div></div>
+    <div class="factors-grid" style="margin:0 2rem 2rem">${factorsHTML}</div>
+    ${kpHTML}
+    <div class="cta-banca">
+      <p>¿Hay valor en este partido? Lleva estas probabilidades al módulo de Banca y deja que Kelly calcule cuánto apostar.</p>
+      <button onclick="sendToKelly(${p.p_win_a},${p.p_draw},${p.p_win_b},'${esc(a)}','${esc(b)}')">IR A BANCA →</button>
     </div>`;
-
-  $('to-bankroll').addEventListener('click', () => {
-    $('kp-home').value = p.p_win_a; $('kp-draw').value = p.p_draw; $('kp-away').value = p.p_win_b;
-    $('kp-a-lbl').textContent = a; $('kp-b-lbl').textContent = b;
-    $('ko-a-lbl').textContent = a; $('ko-b-lbl').textContent = b;
-    $('autofill-hint').hidden = false;
-    goToView('bankroll');
-  });
 }
 
-// ═══════ VISTA 3: KELLY ═══════
-$('currency').addEventListener('change', (e) => {
-  const syms = {COP:'$',USD:'$',EUR:'€',MXN:'$',ARS:'$'};
-  $('currency-sym').textContent = syms[e.target.value] || '$';
-});
+/* ═══ RADAR SVG ═══ */
+function buildRadar(factors, nameA, nameB) {
+  const N = factors.length, cx = 200, cy = 200, R = 150;
+  const angles = factors.map((_, i) => (i / N) * Math.PI * 2 - Math.PI / 2);
+  function pt(val, r = R) { return angles.map((a, i) => [cx + r * Math.cos(angles[i]) * (val[i]/100), cy + r * Math.sin(angles[i]) * (val[i]/100)]); }
+  const valsA = factors.map(f => f[0]), valsB = factors.map(f => f[1]);
+  const ptsA = pt(valsA), ptsB = pt(valsB);
+  const polyA = ptsA.map(p => p.join(',')).join(' ');
+  const polyB = ptsB.map(p => p.join(',')).join(' ');
+  // Grid circles
+  let gridLines = '';
+  [0.25,0.5,0.75,1].forEach(r => {
+    const pts = angles.map(a => [cx + R*r*Math.cos(a), cy + R*r*Math.sin(a)]);
+    gridLines += `<polygon points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#2a2a2a" stroke-width="1"/>`;
+  });
+  // Axis lines
+  let axisLines = angles.map(a => `<line x1="${cx}" y1="${cy}" x2="${cx+R*Math.cos(a)}" y2="${cy+R*Math.sin(a)}" stroke="#2a2a2a" stroke-width="1"/>`).join('');
+  // Labels
+  let labels = factors.map((f, i) => {
+    const lx = cx + (R + 22) * Math.cos(angles[i]), ly = cy + (R + 22) * Math.sin(angles[i]);
+    return `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle" fill="#666" font-family="Space Mono, monospace" font-size="9" letter-spacing="1">${f[2]}</text>`;
+  }).join('');
+  return `<svg class="radar-svg" viewBox="0 0 400 400" width="340" height="340">
+    ${gridLines}${axisLines}
+    <polygon points="${polyA}" fill="rgba(200,241,53,0.15)" stroke="#c8f135" stroke-width="2"/>
+    <polygon points="${polyB}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
+    ${ptsA.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="#c8f135"/>`).join('')}
+    ${ptsB.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="rgba(255,255,255,0.5)"/>`).join('')}
+    ${labels}
+    <text x="30" y="390" fill="#c8f135" font-family="Space Mono,monospace" font-size="9">■ ${nameA}</text>
+    <text x="200" y="390" fill="#888" font-family="Space Mono,monospace" font-size="9">■ ${nameB}</text>
+  </svg>`;
+}
 
-$('kelly-btn').addEventListener('click', async () => {
+/* ═══ KELLY ═══ */
+function sendToKelly(ph, pd, pa, ta, tb) {
+  $('k-ph').value = ph; $('k-pd').value = pd; $('k-pa').value = pa;
+  $('kl-a').textContent = ta; $('kl-b').textContent = tb;
+  $('ko-a').textContent = ta; $('ko-b').textContent = tb;
+  $('hint-autofill').hidden = false;
+  goView('bankroll');
+}
+
+$('k-btn').addEventListener('click', async () => {
   const payload = {
-    p_home: +$('kp-home').value, p_draw: +$('kp-draw').value, p_away: +$('kp-away').value,
-    odds_home: +$('ko-home').value, odds_draw: +$('ko-draw').value, odds_away: +$('ko-away').value,
-    bankroll: +$('bankroll').value, kelly_multiplier: +$('kelly-mult').value,
-    team_a: $('kp-a-lbl').textContent, team_b: $('kp-b-lbl').textContent,
-    currency: $('currency').value,
+    p_home: +$('k-ph').value, p_draw: +$('k-pd').value, p_away: +$('k-pa').value,
+    odds_home: +$('k-oh').value, odds_draw: +$('k-od').value, odds_away: +$('k-oa').value,
+    bankroll: +$('k-bank').value, kelly_multiplier: +$('k-mult').value,
+    team_a: $('kl-a').textContent, team_b: $('kl-b').textContent,
+    currency: $('k-cur').value,
   };
   try {
-    const r = await fetch('/api/kelly', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    renderKelly(data, payload.currency);
-    $('kelly-results').hidden = false;
-  } catch (e) { alert('Error: ' + e.message); }
+    const d = await fetch('/api/kelly', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    renderKelly(d, payload.currency);
+    $('k-results').hidden = false;
+  } catch(e) { alert('Error: ' + e.message); }
 });
 
 function renderKelly(d, cur) {
   const best = d.best_bet;
   let bestHTML = '';
   if (best) {
-    bestHTML = `<div class="glass best-bet">
-      <div class="bb-label">Apuesta de valor recomendada</div>
+    bestHTML = `<div class="best-bet">
+      <div class="bb-tag">Apuesta de valor recomendada</div>
       <div class="bb-outcome">${best.outcome_label}</div>
-      <div class="bb-metrics">
-        <div class="bb-metric"><div class="bb-metric-val stake">${fmt(best.stake)}</div><div class="bb-metric-lbl">apostar (${cur})</div></div>
-        <div class="bb-metric"><div class="bb-metric-val">+${best.edge_pct}%</div><div class="bb-metric-lbl">ventaja (edge)</div></div>
-        <div class="bb-metric"><div class="bb-metric-val">${best.decimal_odds}</div><div class="bb-metric-lbl">cuota</div></div>
-        <div class="bb-metric"><div class="bb-metric-val">${fmt(best.potential_profit)}</div><div class="bb-metric-lbl">ganancia potencial</div></div>
+      <div class="bb-nums">
+        <div class="bb-num"><div class="bb-val hl">${fmtNum(best.stake)}</div><div class="bb-lbl">apostar (${cur})</div></div>
+        <div class="bb-num"><div class="bb-val">+${best.edge_pct}%</div><div class="bb-lbl">edge</div></div>
+        <div class="bb-num"><div class="bb-val">${best.decimal_odds}</div><div class="bb-lbl">cuota</div></div>
+        <div class="bb-num"><div class="bb-val">${fmtNum(best.potential_profit)}</div><div class="bb-lbl">ganancia potencial</div></div>
       </div></div>`;
   }
-
   let simHTML = '';
   if (d.simulation) {
     const s = d.simulation;
-    simHTML = `<div class="glass sim-card">
-      <div class="bb-label">Simulación Monte Carlo · ${s.n_bets} apuestas repetidas, 400 escenarios</div>
-      <div class="sim-grid">
-        <div class="sim-stat"><div class="sim-stat-val">${fmt(s.median_final)}</div><div class="sim-stat-lbl">banca mediana final</div></div>
-        <div class="sim-stat"><div class="sim-stat-val">${fmt(s.p10)}</div><div class="sim-stat-lbl">escenario malo (p10)</div></div>
-        <div class="sim-stat"><div class="sim-stat-val">${fmt(s.p90)}</div><div class="sim-stat-lbl">escenario bueno (p90)</div></div>
-        <div class="sim-stat"><div class="sim-stat-val ${s.ruin_probability_pct>5?'ruin-warn':''}">${s.ruin_probability_pct}%</div><div class="sim-stat-lbl">prob. de ruina</div></div>
+    simHTML = `<div class="sim-block">
+      <div class="sim-tag">Monte Carlo · ${s.n_bets} apuestas repetidas · 400 escenarios</div>
+      <div class="sim-nums">
+        <div class="sim-n"><div class="sim-nv">${fmtNum(s.median_final)}</div><div class="sim-nl">mediana final</div></div>
+        <div class="sim-n"><div class="sim-nv">${fmtNum(s.p10)}</div><div class="sim-nl">malo (p10)</div></div>
+        <div class="sim-n"><div class="sim-nv">${fmtNum(s.p90)}</div><div class="sim-nl">bueno (p90)</div></div>
+        <div class="sim-n"><div class="sim-nv ${s.ruin_probability_pct>5?'warn':''}">${s.ruin_probability_pct}%</div><div class="sim-nl">prob. ruina</div></div>
       </div></div>`;
   }
-
-  let betsHTML = d.recommendations.map(r => `
-    <div class="bet-row ${r.edge_pct>0?'value':''}">
-      <span class="bet-name">${r.outcome_label}</span>
-      <span><span class="bet-mini-lbl">edge</span><span class="bet-edge ${r.edge_pct>0?'pos':'neg'}">${r.edge_pct>0?'+':''}${r.edge_pct}%</span></span>
-      <span><span class="bet-mini-lbl">modelo vs casa</span>${Math.round(r.model_prob*100)}% / ${Math.round(r.implied_prob*100)}%</span>
-      <span><span class="bet-mini-lbl">apostar</span>${r.stake>0?fmt(r.stake):'—'}</span>
+  const betsHTML = d.recommendations.map(r =>
+    `<div class="abt ${r.edge_pct>0?'has-v':''}">
+      <span class="abt-name">${r.outcome_label}</span>
+      <span><span class="abt-lbl">edge</span><span class="abt-v ${r.edge_pct>0?'pos':'neg'}">${r.edge_pct>0?'+':''}${r.edge_pct}%</span></span>
+      <span><span class="abt-lbl">modelo / casa</span>${Math.round(r.model_prob*100)}% / ${Math.round(r.implied_prob*100)}%</span>
+      <span><span class="abt-lbl">apostar</span>${r.stake>0?fmtNum(r.stake):'—'}</span>
     </div>`).join('');
-
-  $('kelly-results').innerHTML = `
-    <div class="glass kelly-verdict ${d.has_value?'has-value':'no-value'}">
-      <div class="kv-headline">${d.has_value?'Hay valor en este partido':'Sin valor — mejor no apostar'}</div>
-      <div class="kv-text">${d.verdict}</div>
-    </div>
-    ${bestHTML}
-    ${simHTML}
-    <div class="section-title">Todos los resultados</div>
-    <div class="allbets">${betsHTML}</div>
-    ${d.fair_probabilities && d.fair_probabilities.bookmaker_margin_pct ? `<p style="text-align:center;color:var(--txt-faint);font-size:0.78rem;margin-top:1rem;font-family:'Space Mono',monospace">Margen de la casa: ${d.fair_probabilities.bookmaker_margin_pct}% — eso es lo que debes superar para tener ventaja.</p>` : ''}`;
+  $('k-results').innerHTML = `
+    <div class="k-verdict ${d.has_value?'v-yes':'v-no'}">
+      <h3>${d.has_value?'Hay valor':'Sin valor — mejor no apostar'}</h3>
+      <p>${d.verdict}</p></div>
+    ${bestHTML}${simHTML}
+    <div style="padding:1rem 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">TODOS LOS RESULTADOS</div>
+    <div class="all-bets">${betsHTML}</div>
+    ${d.fair_probabilities?.bookmaker_margin_pct?`<p style="text-align:center;color:var(--muted);font-family:var(--ff-mono);font-size:0.7rem;padding:1rem 2rem 2rem">Margen de la casa: ${d.fair_probabilities.bookmaker_margin_pct}% — eso es lo que debes superar.</p>`:''}`;
 }
 
-// ═══════ VISTA 4: BACKTEST ═══════
+/* ═══ BACKTEST ═══ */
 $('bt-btn').addEventListener('click', async () => {
   let preds;
-  try { preds = JSON.parse($('bt-data').value); }
-  catch { alert('El JSON no es válido. Revisa la sintaxis.'); return; }
+  try { preds = JSON.parse($('bt-in').value); } catch { alert('JSON inválido.'); return; }
   try {
-    const r = await fetch('/api/backtest', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ predictions: preds }) });
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    renderBacktest(data);
-    $('bt-results').hidden = false;
-  } catch (e) { alert('Error: ' + e.message); }
+    const d = await fetch('/api/backtest', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({predictions:preds}) }).then(r=>r.json());
+    if (d.error) throw new Error(d.error);
+    renderBT(d); $('bt-results').hidden = false;
+  } catch(e) { alert('Error: ' + e.message); }
 });
 
-function renderBacktest(d) {
-  const accClass = d.accuracy_pct >= 50 ? 'good' : 'bad';
-  const roiClass = d.roi_pct > 0 ? 'good' : 'bad';
-  let detailsHTML = d.details.map(m => `
-    <div class="bt-match">
-      <span>${m.match}</span>
-      <span><span class="bet-mini-lbl">predijo</span>${m.predicted}</span>
-      <span><span class="bet-mini-lbl">real</span>${m.actual}</span>
-      <span class="${m.correct?'bt-hit':'bt-miss'}">${m.correct?'✓':'✗'}</span>
-    </div>`).join('');
-
+function renderBT(d) {
+  const aC = d.accuracy_pct>=50?'good':'bad', rC = d.roi_pct>0?'good':'bad';
   $('bt-results').innerHTML = `
     <div class="bt-metrics">
-      <div class="glass bt-metric"><div class="bt-metric-val ${accClass}">${d.accuracy_pct}%</div><div class="bt-metric-lbl">acierto</div></div>
-      <div class="glass bt-metric"><div class="bt-metric-val">${d.brier_score}</div><div class="bt-metric-lbl">brier score</div></div>
-      <div class="glass bt-metric"><div class="bt-metric-val ${roiClass}">${d.roi_pct>0?'+':''}${d.roi_pct}%</div><div class="bt-metric-lbl">ROI apuestas valor</div></div>
-      <div class="glass bt-metric"><div class="bt-metric-val">${d.value_bet_hit_rate}%</div><div class="bt-metric-lbl">acierto en valor</div></div>
+      <div class="bt-m"><div class="bt-mv ${aC}">${d.accuracy_pct}%</div><div class="bt-ml">acierto</div></div>
+      <div class="bt-m"><div class="bt-mv">${d.brier_score}</div><div class="bt-ml">brier score</div></div>
+      <div class="bt-m"><div class="bt-mv ${rC}">${d.roi_pct>0?'+':''}${d.roi_pct}%</div><div class="bt-ml">ROI</div></div>
+      <div class="bt-m"><div class="bt-mv">${d.value_bet_hit_rate}%</div><div class="bt-ml">hit rate valor</div></div>
     </div>
-    <div class="glass bt-interp">${d.interpretation}</div>
-    <div class="section-title">Detalle por partido</div>
-    <div class="bt-details">${detailsHTML}</div>`;
+    <div class="bt-interp">${d.interpretation}</div>
+    <div style="padding:1rem 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">DETALLE POR PARTIDO</div>
+    <div class="bt-rows">${d.details.map(m=>`
+      <div class="bt-row">
+        <span>${m.match||''}</span>
+        <span><span class="bt-lbl2">predijo</span>${m.predicted}</span>
+        <span><span class="bt-lbl2">real</span>${m.actual}</span>
+        <span class="${m.correct?'bt-hit':'bt-miss'}">${m.correct?'✓':'✗'}</span>
+      </div>`).join('')}
+    </div>`;
 }
