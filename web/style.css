@@ -537,3 +537,24 @@ input[type=number] { -moz-appearance: textfield; }
 .optw-arrow { color: #555; }
 .optw-opt { color: var(--lime); font-weight: 700; }
 @media (max-width: 640px){ .optw-row{ grid-template-columns: 1fr; gap: 0.5rem; } }
+
+/* ── Últimos partidos detallados (ambos equipos) ── */
+.rm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.2rem; }
+.rm-col-head { font-family: var(--ff-display); font-size: 1.2rem; letter-spacing: 1px; color: var(--lime); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem; }
+.rm-item { display: grid; grid-template-columns: 22px 18px 1fr auto auto; gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.78rem; }
+.rm-result { width: 20px; height: 20px; display: grid; place-items: center; font-family: var(--ff-mono); font-size: 0.62rem; font-weight: 700; border-radius: 3px; }
+.rm-result.W { background: var(--lime); color: var(--black); }
+.rm-result.D { background: #444; color: #fff; }
+.rm-result.L { background: var(--red); color: #fff; }
+.rm-loc { font-family: var(--ff-mono); font-size: 0.6rem; color: var(--muted); }
+.rm-opp { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rm-logo { width: 16px; height: 16px; object-fit: contain; }
+.rm-score { font-family: var(--ff-mono); font-weight: 700; }
+.rm-date { font-family: var(--ff-mono); font-size: 0.6rem; color: var(--muted); }
+@media (max-width: 640px){ .rm-grid{ grid-template-columns: 1fr; } }
+
+/* ── Estado de alineación (confirmada/probable) ── */
+.lineup-status { margin: 0 2rem 1rem; padding: 0.9rem 1.3rem; font-family: var(--ff-mono); font-size: 0.72rem; letter-spacing: 1px; display: flex; flex-direction: column; gap: 0.3rem; }
+.lineup-status.confirmed { background: rgba(200,241,53,0.08); border-left: 3px solid var(--lime); color: var(--lime); }
+.lineup-status.probable { background: rgba(255,180,50,0.08); border-left: 3px solid #ffb432; color: #ffd089; }
+.lineup-status span { font-size: 0.62rem; letter-spacing: 0.5px; color: var(--muted); text-transform: none; }

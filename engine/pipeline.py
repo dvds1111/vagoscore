@@ -133,11 +133,28 @@ def run_prediction(
             elo_b = {"team": team_b, "elo": 1750}
     results["elo_b"] = elo_b
 
-    # ── 3. Valor de plantilla ── (estimado de rating+ELO si API; scraper si no)
+    # ── 3. Valor de plantilla ── (Transfermarkt real → estimado → scraper)
     log("Obteniendo valor de plantilla...", 55)
     if use_api:
-        market_a = afa.estimate_market_value(sofa_a, elo_a.get("elo", 1700))
-        market_b = afa.estimate_market_value(sofa_b, elo_b.get("elo", 1700))
+        # Para clubes, intentar valor REAL de Transfermarkt primero
+        market_a = market_b = None
+        if not is_national:
+            try:
+                from scrapers import transfermarkt_api as tm
+                if tm.is_available():
+                    tm_a = tm.get_club_market_value(team_a)
+                    tm_b = tm.get_club_market_value(team_b)
+                    if tm_a:
+                        market_a = tm_a
+                    if tm_b:
+                        market_b = tm_b
+            except Exception as e:
+                results["errors"].append(f"transfermarkt: {e}")
+        # Lo que no se obtuvo de Transfermarkt, se estima
+        if market_a is None:
+            market_a = afa.estimate_market_value(sofa_a, elo_a.get("elo", 1700))
+        if market_b is None:
+            market_b = afa.estimate_market_value(sofa_b, elo_b.get("elo", 1700))
         results["market_a"] = market_a
         results["market_b"] = market_b
     else:
@@ -173,18 +190,23 @@ def run_prediction(
             results["errors"].append(f"h2h: {e}")
     results["h2h"] = h2h_data
 
-    # ── Forma reciente W/D/L para los paneles ──
+    # ── Forma reciente W/D/L + partidos detallados para los paneles ──
     form_a = form_b = None
+    matches_a = matches_b = None
     if use_api:
         try:
             if info_a.get("id"):
                 form_a = afa.get_recent_form_wdl(info_a["id"])
+                matches_a = afa.get_recent_matches_detailed(info_a["id"])
             if info_b.get("id"):
                 form_b = afa.get_recent_form_wdl(info_b["id"])
+                matches_b = afa.get_recent_matches_detailed(info_b["id"])
         except Exception as e:
             results["errors"].append(f"form: {e}")
     results["form_a"] = form_a
     results["form_b"] = form_b
+    results["matches_a"] = matches_a
+    results["matches_b"] = matches_b
     results["api_meta"] = api_meta
 
     # ── 5. Score final ──
@@ -215,6 +237,8 @@ def run_prediction(
     # Forma reciente (resultados W/D/L) — desde API-Football si disponible
     raw["form_a"] = results.get("form_a")
     raw["form_b"] = results.get("form_b")
+    raw["matches_a"] = results.get("matches_a")
+    raw["matches_b"] = results.get("matches_b")
     # Marca si el valor de mercado es estimado
     raw["market_is_estimate"] = market_a.get("is_estimate", False) if isinstance(market_a, dict) else False
     raw["elo_is_estimate"] = elo_a.get("is_estimate", False) if isinstance(elo_a, dict) else False

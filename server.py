@@ -84,7 +84,34 @@ def team_stats():
 @app.route("/api/lineup/detailed/<int:fixture_id>")
 def lineup_detailed(fixture_id):
     season = request.args.get("season", type=int)
-    return jsonify(apif.get_lineup_with_values(fixture_id, season))
+    home_id = request.args.get("home_id", type=int)
+    away_id = request.args.get("away_id", type=int)
+    league_id = request.args.get("league", type=int)
+
+    # 1. Intentar alineación CONFIRMADA
+    confirmed = apif.get_lineup_with_values(fixture_id, season)
+    has_confirmed = confirmed and (
+        (confirmed.get("home", {}).get("starters")) or
+        (confirmed.get("away", {}).get("starters"))
+    )
+    if has_confirmed:
+        confirmed["status"] = "confirmed"
+        return jsonify(confirmed)
+
+    # 2. Si no hay confirmada, generar la PROBABLE para ambos equipos
+    from scrapers import apifootball_adapter as afa
+    result = {"status": "probable", "home": {}, "away": {}}
+    if season and home_id:
+        try:
+            result["home"] = afa.get_probable_lineup(home_id, season, league_id)
+        except Exception as e:
+            print(f"[lineup] probable home error: {e}")
+    if season and away_id:
+        try:
+            result["away"] = afa.get_probable_lineup(away_id, season, league_id)
+        except Exception as e:
+            print(f"[lineup] probable away error: {e}")
+    return jsonify(result)
 
 
 @app.route("/api/player/<int:player_id>")
@@ -201,6 +228,19 @@ def backtest():
     if not predictions:
         return jsonify({"error": "Sin predicciones para evaluar"}), 400
     return jsonify(run_backtest(predictions))
+
+
+@app.route("/api/ai/test")
+def ai_test():
+    """Prueba real la conexión con Deepseek y devuelve el error exacto si falla."""
+    return jsonify(gemini.test_connection())
+
+
+@app.route("/api/transfermarkt/test")
+def tm_test():
+    """Diagnóstico de la conexión con Transfermarkt API."""
+    from scrapers import transfermarkt_api as tm
+    return jsonify(tm.test_connection())
 
 
 @app.route("/api/ai/analyze", methods=["POST"])

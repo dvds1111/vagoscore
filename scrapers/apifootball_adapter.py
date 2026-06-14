@@ -255,3 +255,126 @@ def get_recent_form_wdl(team_id: int, last: int = 10) -> list:
         ga = goals.get("away" if is_home else "home") or 0
         out.append("W" if gf > ga else "D" if gf == ga else "L")
     return out[:last]
+
+
+def get_recent_matches_detailed(team_id: int, last: int = 10) -> list:
+    """
+    Últimos partidos con detalle completo: rival, marcador, fecha, local/visita,
+    resultado. Para mostrar la lista de últimos partidos enriquecida.
+    """
+    data = _request("fixtures", {"team": team_id, "last": last}, cache_type="team_stats")
+    out = []
+    for item in reversed(data.get("response", [])):
+        teams = item.get("teams", {})
+        goals = item.get("goals", {})
+        fx = item.get("fixture", {})
+        league = item.get("league", {})
+        status = fx.get("status", {}).get("short")
+        if status not in ("FT", "AET", "PEN"):
+            continue
+        is_home = teams.get("home", {}).get("id") == team_id
+        home = teams.get("home", {})
+        away = teams.get("away", {})
+        gf = goals.get("home" if is_home else "away") or 0
+        ga = goals.get("away" if is_home else "home") or 0
+        opponent = away if is_home else home
+        out.append({
+            "date": fx.get("date"),
+            "opponent": opponent.get("name"),
+            "opponent_logo": opponent.get("logo"),
+            "is_home": is_home,
+            "goals_for": gf,
+            "goals_against": ga,
+            "score": f"{gf}-{ga}",
+            "result": "W" if gf > ga else "D" if gf == ga else "L",
+            "competition": league.get("name"),
+        })
+    return out[:last]
+
+
+
+# ─── Alineación más probable (cuando no hay confirmada) ───────────────────────
+
+def get_probable_lineup(team_id: int, season: int, league_id: int = None) -> dict:
+    """
+    Estima la alineación más probable de un equipo a partir de los jugadores
+    con más minutos en la temporada y su posición habitual.
+
+    Devuelve formato compatible con la cancha del frontend:
+    {formation, starters: [{name, number, pos, grid, rating, photo, market_value}]}
+    """
+    # Obtener plantilla con estadísticas (rating + minutos + posición)
+    ratings = get_team_ratings(team_id, season, league_id)
+    players = ratings.get("players", [])
+    if not players:
+        return {}
+
+    # Clasificar por posición usando el campo "position" del rating
+    # Posiciones API-Football: Goalkeeper, Defender, Midfielder, Attacker
+    by_pos = {"G": [], "D": [], "M": [], "F": []}
+    for p in players:
+        pos = (p.get("position") or "").lower()
+        if "goal" in pos or pos == "g":
+            by_pos["G"].append(p)
+        elif "def" in pos or pos == "d":
+            by_pos["D"].append(p)
+        elif "mid" in pos or pos == "m":
+            by_pos["M"].append(p)
+        elif "att" in pos or "forward" in pos or pos == "f":
+            by_pos["F"].append(p)
+        else:
+            by_pos["M"].append(p)  # por defecto medio
+
+    # Ordenar cada grupo por partidos jugados (más titular = más probable)
+    for k in by_pos:
+        by_pos[k].sort(key=lambda x: x.get("matches", 0), reverse=True)
+
+    # Formación 4-3-3 por defecto (la más común)
+    formation = "4-3-3"
+    needs = {"G": 1, "D": 4, "M": 3, "F": 3}
+
+    # Ajustar si no hay suficientes en alguna línea
+    if len(by_pos["F"]) < 3 and len(by_pos["M"]) >= 4:
+        formation = "4-4-2"
+        needs = {"G": 1, "D": 4, "M": 4, "F": 2}
+
+    starters = []
+    # Coordenadas grid: fila:columna (fila 1 = portero)
+    grid_positions = {
+        "G": [(1, 1)],
+        "D": [(2, 1), (2, 2), (2, 3), (2, 4)],
+        "M": [(3, 1), (3, 2), (3, 3), (3, 4)],
+        "F": [(4, 1), (4, 2), (4, 3)],
+    }
+
+    number = 1
+    for line in ["G", "D", "M", "F"]:
+        count = needs[line]
+        coords = grid_positions[line]
+        for i in range(count):
+            if i < len(by_pos[line]):
+                p = by_pos[line][i]
+                col = i + 1
+                total_in_line = count
+                # grid como "fila:columna" centrado
+                grid = f"{grid_positions[line][0][0]}:{col}"
+                starters.append({
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "number": p.get("id", number) % 99 or number,
+                    "pos": line,
+                    "grid": grid,
+                    "rating": p.get("avg_rating"),
+                    "photo": p.get("photo"),
+                    "matches": p.get("matches", 0),
+                    "goals": p.get("goals", 0),
+                })
+            number += 1
+
+    return {
+        "formation": formation,
+        "starters": starters,
+        "is_probable": True,
+        "coach": None,
+        "source": "Alineación probable (jugadores con más minutos)",
+    }

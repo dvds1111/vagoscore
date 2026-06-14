@@ -270,16 +270,31 @@ function buildDetailPanels(pred, a, b) {
       </div><div class="elo-src">${eloEst ? 'Derivado de forma reciente real (API-Football)' : 'Fuente: eloratings.net / clubelo.com'}</div></div></div></div>`;
   }
 
-  // Panel 2: Últimos partidos (forma)
+  // Panel 2: Últimos partidos (forma) — AMBOS equipos con detalle
   const formA = raw.form_a, formB = raw.form_b;
-  if (formA || formB) {
+  const matchesA = raw.matches_a, matchesB = raw.matches_b;
+  if (formA || formB || matchesA || matchesB) {
     const dots = (form) => (form || []).slice(0,10).map(r => `<span class="fdot ${r}">${r}</span>`).join('');
+    const matchList = (matches) => !matches || !matches.length ? '<p style="color:#555;font-family:var(--ff-mono);font-size:0.65rem;padding:0.5rem 0">Sin datos detallados</p>' :
+      matches.slice(0,10).map(m => `
+        <div class="rm-item">
+          <span class="rm-result ${m.result}">${m.result}</span>
+          <span class="rm-loc">${m.is_home ? 'L' : 'V'}</span>
+          <span class="rm-opp">${m.opponent_logo ? `<img src="${m.opponent_logo}" class="rm-logo">` : ''}${m.opponent}</span>
+          <span class="rm-score">${m.score}</span>
+          <span class="rm-date">${m.date ? new Date(m.date).toLocaleDateString('es-CO',{day:'numeric',month:'short'}) : ''}</span>
+        </div>`).join('');
+
     html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
-      <span class="dp-title"><span class="dp-icon">◷</span>Últimos partidos</span><span class="dp-chevron">▾</span></div>
+      <span class="dp-title"><span class="dp-icon">◷</span>Últimos partidos · ambos equipos</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner">
         <div class="form-row"><span class="form-team-lbl">${a}</span><div class="form-dots">${dots(formA)}</div></div>
         <div class="form-row"><span class="form-team-lbl">${b}</span><div class="form-dots">${dots(formB)}</div></div>
-        <p style="font-family:var(--ff-mono);font-size:0.6rem;color:#555;margin-top:0.8rem">W = victoria · D = empate · L = derrota · del más reciente al más antiguo</p>
+        <div class="rm-grid">
+          <div class="rm-col"><div class="rm-col-head">${a}</div>${matchList(matchesA)}</div>
+          <div class="rm-col"><div class="rm-col-head">${b}</div>${matchList(matchesB)}</div>
+        </div>
+        <p style="font-family:var(--ff-mono);font-size:0.6rem;color:#555;margin-top:0.8rem">L = local · V = visitante · del más reciente al más antiguo</p>
       </div></div></div>`;
   }
 
@@ -463,11 +478,12 @@ async function openMatch(fixtureId, home, away, homeId, awayId, season) {
   const zone = $('match-detail-zone');
   zone.innerHTML = '<div class="loading"><div class="ld-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Cargando alineaciones y datos…</p></div>';
 
-  // Intentar cargar alineaciones reales
+  // Cargar alineaciones: confirmada si existe, probable si no
   let lineups = null;
-  if (fixtureId) {
-    try { lineups = await fetch(`/api/lineup/detailed/${fixtureId}?season=${season}`).then(r => r.json()); } catch {}
-  }
+  try {
+    const url = `/api/lineup/detailed/${fixtureId}?season=${season}&home_id=${homeId}&away_id=${awayId}`;
+    lineups = await fetch(url).then(r => r.json());
+  } catch {}
 
   let html = '';
 
@@ -477,12 +493,22 @@ async function openMatch(fixtureId, home, away, homeId, awayId, season) {
     <span style="font-family:var(--ff-mono);font-size:0.7rem;color:var(--muted)">Corre el modelo de 5 señales sobre este enfrentamiento</span>
   </div>`;
 
+  // Badge de estado de la alineación
+  const isProbable = lineups && lineups.status === 'probable';
+  const isConfirmed = lineups && lineups.status === 'confirmed';
+  if (isProbable || isConfirmed) {
+    html += `<div class="lineup-status ${isConfirmed ? 'confirmed' : 'probable'}">
+      ${isConfirmed ? '✓ ALINEACIÓN CONFIRMADA' : '◷ ALINEACIÓN PROBABLE'}
+      <span>${isConfirmed ? 'Titulares oficiales del partido' : 'Estimada según los jugadores con más minutos · se actualizará cuando se confirme'}</span>
+    </div>`;
+  }
+
   // Cancha con alineaciones
   if (lineups && (lineups.home || lineups.away)) {
     html += renderPitchSection(lineups, home, away);
   } else {
     html += `<div style="margin:0 2rem 2rem;padding:2rem;background:var(--gray-3);border:1px solid var(--border);text-align:center">
-      <p style="font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted);line-height:1.7">Las alineaciones confirmadas aparecen entre 20 y 40 minutos antes del partido.<br>Mientras tanto puedes analizar el enfrentamiento con el modelo.</p>
+      <p style="font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted);line-height:1.7">No hay datos de alineación disponibles para este partido todavía.<br>Puedes analizar el enfrentamiento con el modelo.</p>
     </div>`;
   }
 

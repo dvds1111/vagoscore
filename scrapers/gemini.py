@@ -26,6 +26,48 @@ def has_ai() -> bool:
     return bool(DEEPSEEK_KEY)
 
 
+def test_connection() -> dict:
+    """
+    Prueba real la conexión con Deepseek y devuelve un diagnóstico detallado.
+    Sirve para depurar por qué la IA no responde aunque la clave exista.
+    """
+    if not DEEPSEEK_KEY:
+        return {"ok": False, "stage": "config", "detail": "No hay clave DEEPSEEK_API_KEY"}
+    try:
+        resp = requests.post(
+            DEEPSEEK_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {DEEPSEEK_KEY}",
+            },
+            json={
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": "Responde solo: OK"}],
+                "max_tokens": 10,
+            },
+            timeout=20,
+        )
+        result = {"ok": False, "stage": "response", "http_status": resp.status_code}
+        try:
+            data = resp.json()
+        except Exception:
+            result["detail"] = f"Respuesta no-JSON: {resp.text[:200]}"
+            return result
+        if resp.status_code == 200 and data.get("choices"):
+            return {"ok": True, "stage": "success",
+                    "detail": "Conexión con Deepseek exitosa",
+                    "model": DEEPSEEK_MODEL}
+        # Error de la API: extraer el mensaje exacto
+        err = data.get("error", {})
+        result["detail"] = err.get("message", str(data)[:300]) if isinstance(err, dict) else str(err)[:300]
+        result["error_type"] = err.get("type") if isinstance(err, dict) else None
+        return result
+    except requests.Timeout:
+        return {"ok": False, "stage": "network", "detail": "Timeout (Deepseek tardó demasiado)"}
+    except requests.RequestException as e:
+        return {"ok": False, "stage": "network", "detail": str(e)[:300]}
+
+
 def _call_ai(prompt: str, max_tokens: int = 800) -> str:
     """Llamada base a Deepseek. Devuelve texto o '' si falla."""
     if not DEEPSEEK_KEY:
