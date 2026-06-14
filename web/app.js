@@ -240,6 +240,7 @@ function renderResults(data) {
     <div class="section-header" style="padding:1rem 2rem"><span class="sh-num">03</span><h2 class="sh-title">DESGLOSE</h2><div class="sh-line"></div></div>
     <div class="factors-grid" style="margin:0 2rem 2rem">${factorsHTML}</div>
     ${kpHTML}
+    <div id="ai-zone"><div class="ai-panel" style="text-align:center"><div class="ai-head" style="justify-content:center"><span class="ai-badge">⬡ IA</span><span class="ai-title">Análisis experto con IA</span></div><p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">Deja que la IA interprete todo el análisis: lectura táctica, factores clave y dónde está el valor.</p><button class="ai-cta-btn" id="ai-trigger" onclick="requestAIAnalysis()">Generar análisis IA ⬡</button></div></div>
     <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">05</span><h2 class="sh-title">DATOS CRUDOS</h2><div class="sh-line"></div></div>
     ${buildDetailPanels(pred, a, b)}
     <div class="cta-banca">
@@ -609,4 +610,115 @@ async function showPlayer(id, name, pos, number, season) {
 /* ═══ PANELES DESPLEGABLES (toggle) ═══ */
 function togglePanel(el) {
   el.closest('.detail-panel').classList.toggle('open');
+}
+
+/* ═══════════════ v5: ESCÁNER DE BANCA + IA ═══════════════ */
+
+// Tabs de modo banca
+document.querySelectorAll('.bm-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.bm-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const mode = tab.dataset.mode;
+    $('mode-single').hidden = mode !== 'single';
+    $('mode-scan').hidden = mode !== 'scan';
+    if (mode === 'scan') populateScanLeagues();
+  });
+});
+
+// Slider de exposición
+const scExp = $('sc-exp');
+if (scExp) scExp.addEventListener('input', e => { $('sc-exp-val').textContent = e.target.value + '%'; });
+
+// Poblar ligas del escáner (reusa leaguesData)
+function populateScanLeagues() {
+  const sel = $('sc-league');
+  if (!leaguesData.length) { sel.innerHTML = '<option value="">Configura API-Football primero</option>'; return; }
+  if (sel.options.length > 1) return; // ya cargado
+  sel.innerHTML = '<option value="">Elige competición…</option>' +
+    leaguesData.map((l,i) => `<option value="${i}">${l.name}${l.country ? ' · '+l.country : ''}</option>`).join('');
+}
+
+// Ejecutar escáner
+const scBtn = $('sc-btn');
+if (scBtn) scBtn.addEventListener('click', async () => {
+  const idx = $('sc-league').value;
+  if (idx === '') { alert('Elige una competición.'); return; }
+  const league = leaguesData[idx];
+  const payload = {
+    league_id: league.id, season: league.season,
+    bankroll: +$('sc-bank').value,
+    kelly_mult: +$('sc-mult').value,
+    max_exposure: +$('sc-exp').value / 100,
+    currency: $('sc-cur').value,
+    days: 7,
+  };
+  $('sc-results').hidden = true;
+  $('sc-loading').hidden = false;
+  const msgs = ['Buscando próximos partidos…','Corriendo el modelo en cada uno…','Evaluando todos los mercados…','Detectando apuestas de valor…','Repartiendo el capital…','Optimizando la cartera…'];
+  let i = 0; $('sc-load-msg').textContent = msgs[0];
+  const t = setInterval(() => { i=(i+1)%msgs.length; $('sc-load-msg').textContent = msgs[i]; }, 2500);
+
+  try {
+    const d = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }).then(r=>r.json());
+    clearInterval(t); $('sc-loading').hidden = true;
+    if (d.error) throw new Error(d.error);
+    renderScan(d, payload.currency);
+    $('sc-results').hidden = false;
+  } catch(e) { clearInterval(t); $('sc-loading').hidden = true; alert('Error: ' + e.message); }
+});
+
+function renderScan(d, cur) {
+  if (!d.has_value) {
+    $('sc-results').innerHTML = `<div class="scan-verdict" style="border-color:var(--red)"><h3>Sin valor esta jornada</h3><p>${d.verdict}</p><p style="margin-top:0.8rem;color:#555">Partidos analizados: ${d.total_fixtures_scanned || 0}</p></div>`;
+    return;
+  }
+  const aiHTML = d.ai_summary ? `<div class="ai-panel"><div class="ai-head"><span class="ai-badge">⬡ IA</span><span class="ai-title">Lectura del estratega</span></div><div class="ai-summary">${d.ai_summary}</div></div>` : '';
+
+  const betsHTML = d.recommended_bets.map((b,i) => `
+    <div class="scan-bet ${i===0?'top':''}">
+      <div><span class="scan-rank">${i+1}</span><span class="sb-match">${b.match}</span><div class="sb-date">${b.date ? new Date(b.date).toLocaleDateString('es-CO',{day:'numeric',month:'short'}) : ''}</div></div>
+      <div><span class="sb-cell-lbl">apuesta</span><span class="sb-bet">${b.bet_label}</span></div>
+      <div><span class="sb-cell-lbl">edge</span><span class="sb-edge">+${b.edge_pct}%</span></div>
+      <div><span class="sb-cell-lbl">cuota</span><span class="sb-odds">${b.decimal_odds}</span></div>
+      <div><span class="sb-cell-lbl">apostar</span><span class="sb-stake">${fmtNum(b.stake)}</span></div>
+    </div>`).join('');
+
+  $('sc-results').innerHTML = `
+    <div class="scan-verdict"><h3>Cartera de la jornada</h3><p>${d.verdict}</p></div>
+    ${aiHTML}
+    <div class="scan-summary">
+      <div class="ss-cell"><div class="ss-val lime">${d.n_bets}</div><div class="ss-lbl">apuestas</div></div>
+      <div class="ss-cell"><div class="ss-val">${fmtNum(d.total_stake)}</div><div class="ss-lbl">capital (${cur})</div></div>
+      <div class="ss-cell"><div class="ss-val">${d.total_exposure_pct}%</div><div class="ss-lbl">exposición</div></div>
+      <div class="ss-cell"><div class="ss-val lime">+${fmtNum(d.expected_value)}</div><div class="ss-lbl">valor esperado</div></div>
+    </div>
+    <div style="padding:0 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">CARTERA RECOMENDADA · ${d.total_fixtures_scanned} PARTIDOS ANALIZADOS</div>
+    <div class="scan-bets">${betsHTML}</div>
+    <p style="padding:0 2rem 2rem;font-family:var(--ff-mono);font-size:0.65rem;color:#555;line-height:1.7">Los montos respetan tu tope de exposición del ${d.max_exposure_pct}% por jornada con ${d.kelly_mult === 0.5 ? '½' : d.kelly_mult === 1 ? 'Kelly completo' : '¼'} Kelly. Herramienta de cálculo, no consejo financiero.</p>`;
+}
+
+/* ═══ PANEL DE IA EN ANÁLISIS ═══ */
+async function requestAIAnalysis() {
+  if (!lastPred) return;
+  const btn = $('ai-trigger');
+  if (btn) btn.outerHTML = '<div class="ai-loading">⬡ La IA está analizando el partido…</div>';
+  try {
+    const d = await fetch('/api/ai/analyze', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prediction_data: lastPred }) }).then(r=>r.json());
+    const zone = $('ai-zone');
+    if (!d.available) {
+      if (zone) zone.innerHTML = `<div class="ai-panel"><div class="ai-head"><span class="ai-badge">⬡ IA</span><span class="ai-title">Análisis con IA</span></div><p style="color:var(--muted);font-size:0.9rem">La IA no está configurada. Agrega tu clave GEMINI_API_KEY en Render para desbloquear el análisis experto.</p></div>`;
+      return;
+    }
+    const factorsHTML = (d.key_factors || []).map(f => `<div class="ai-factor">${f}</div>`).join('');
+    if (zone) zone.innerHTML = `<div class="ai-panel">
+      <div class="ai-head"><span class="ai-badge">⬡ IA · GEMINI</span><span class="ai-title">Lectura experta del partido</span></div>
+      <div class="ai-summary">${d.summary || ''}</div>
+      ${factorsHTML ? `<div class="ai-factors">${factorsHTML}</div>` : ''}
+      ${d.betting_read ? `<div class="ai-betting"><span class="ai-betting-lbl">Lectura de apuesta</span>${d.betting_read}</div>` : ''}
+    </div>`;
+  } catch(e) {
+    const zone = $('ai-zone');
+    if (zone) zone.innerHTML = `<div class="ai-panel"><p style="color:var(--red)">No se pudo generar el análisis de IA.</p></div>`;
+  }
 }

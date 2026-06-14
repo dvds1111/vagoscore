@@ -157,6 +157,14 @@
 <!-- ══════════════ BANKROLL ══════════════ -->
 <section class="view" id="view-bankroll">
   <div class="page-head"><h2 class="page-title">GESTIÓN DE BANCA</h2></div>
+
+  <div class="bank-mode" id="bank-mode">
+    <button class="bm-tab active" data-mode="single">Un partido</button>
+    <button class="bm-tab" data-mode="scan">⚡ Escáner de jornada</button>
+  </div>
+
+  <!-- MODO 1 PARTIDO -->
+  <div id="mode-single">
   <p class="page-sub">Criterio de Kelly: cuánto apostar dado tu ventaja matemática real.</p>
 
   <div class="kelly-form">
@@ -181,6 +189,40 @@
   </div>
 
   <div id="k-results" hidden></div>
+  </div>
+
+  <!-- MODO ESCÁNER -->
+  <div id="mode-scan" hidden>
+  <p class="page-sub">El motor analiza todos los próximos partidos de una competición, evalúa cada tipo de apuesta (1X2, goles, ambos marcan…) y reparte tu capital entre las de mayor valor — como una cartera, no apuestas sueltas.</p>
+
+  <div class="kelly-form">
+    <div class="kf-row">
+      <div class="kf-field"><label>BANCA TOTAL</label>
+        <div class="kf-money"><span>$</span><input type="number" id="sc-bank" value="100000"><select id="sc-cur"><option>COP</option><option>USD</option><option>EUR</option><option>MXN</option></select></div>
+      </div>
+      <div class="kf-field"><label>COMPETICIÓN</label>
+        <select id="sc-league"><option value="">Cargando…</option></select>
+      </div>
+    </div>
+    <div class="kf-row">
+      <div class="kf-field"><label>ESTRATEGIA KELLY</label>
+        <select id="sc-mult"><option value="0.25">¼ Kelly — conservador</option><option value="0.5" selected>½ Kelly — equilibrado ✓</option><option value="1">Kelly completo — agresivo</option></select>
+      </div>
+      <div class="kf-field"><label>TOPE EXPOSICIÓN: <span id="sc-exp-val">25%</span></label>
+        <input type="range" id="sc-exp" min="5" max="50" value="25" step="5" class="slider">
+      </div>
+    </div>
+    <button class="btn-run full" id="sc-btn">⚡ ESCANEAR JORNADA ↗</button>
+    <p class="hint-autofill" style="color:var(--muted)">Analiza hasta 8 partidos · ~10 requests por partido a la API</p>
+  </div>
+
+  <div class="loading" id="sc-loading" hidden>
+    <div class="ld-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p id="sc-load-msg">Escaneando partidos…</p>
+  </div>
+
+  <div id="sc-results" hidden></div>
+  </div>
 </section>
 
 <!-- ══════════════ BACKTEST ══════════════ -->

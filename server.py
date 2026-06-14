@@ -14,8 +14,10 @@ from engine.pipeline import run_prediction
 from engine.scorer import WeightConfig
 from engine.kelly import analyze_bankroll, simulate_growth
 from engine.backtest import run_backtest
+from engine.bankroll_scanner import derive_market_probabilities, scan_match, build_portfolio
 from cache.db import cache_stats, cache_clear
 from scrapers import apifootball as apif
+from scrapers import gemini
 
 app = Flask(__name__, static_folder="web", static_url_path="")
 
@@ -29,6 +31,7 @@ def index():
 def status():
     return jsonify({
         "apifootball_connected": config.has_apifootball(),
+        "gemini_connected": gemini.has_gemini(),
         "cache": cache_stats(),
     })
 
@@ -182,6 +185,103 @@ def backtest():
     if not predictions:
         return jsonify({"error": "Sin predicciones para evaluar"}), 400
     return jsonify(run_backtest(predictions))
+
+
+@app.route("/api/ai/analyze", methods=["POST"])
+def ai_analyze():
+    """Genera el análisis experto con IA (Gemini) de un partido ya predicho."""
+    if not gemini.has_gemini():
+        return jsonify({"available": False, "reason": "Gemini no configurado"}), 200
+    data = request.get_json(force=True)
+    prediction_data = data.get("prediction_data")
+    if not prediction_data:
+        return jsonify({"error": "Falta prediction_data"}), 400
+    api_preds = data.get("api_predictions")
+    injuries = data.get("injuries")
+    result = gemini.analyze_match(prediction_data, api_preds, injuries)
+    return jsonify(result)
+
+
+@app.route("/api/fixture/predictions/<int:fixture_id>")
+def fixture_predictions(fixture_id):
+    return jsonify(apif.get_fixture_predictions(fixture_id))
+
+
+@app.route("/api/fixture/injuries")
+def fixture_injuries():
+    team_id = request.args.get("team", type=int)
+    season = request.args.get("season", type=int)
+    if not team_id or not season:
+        return jsonify({"injuries": []})
+    return jsonify({"injuries": apif.get_team_injuries(team_id, season)})
+
+
+@app.route("/api/scan", methods=["POST"])
+def scan_bankroll():
+    """
+    Escáner de banca multi-partido.
+    Recibe una liga y temporada, evalúa los próximos partidos en todos los
+    mercados, y devuelve la cartera óptima de apuestas con Kelly.
+    """
+    data = request.get_json(force=True)
+    league_id = data.get("league_id")
+    season = data.get("season")
+    bankroll = float(data.get("bankroll", 100000))
+    kelly_mult = float(data.get("kelly_mult", 0.5))
+    max_exposure = float(data.get("max_exposure", 0.25))
+    currency = data.get("currency", "COP")
+    days = int(data.get("days", 7))
+
+    if not config.has_apifootball():
+        return jsonify({"error": "API-Football requerida para el escáner"}), 200
+    if not league_id or not season:
+        return jsonify({"error": "Faltan league_id y season"}), 400
+
+    from engine.pipeline import run_prediction
+    from scrapers import apifootball_adapter as afa
+
+    fixtures = apif.get_upcoming_fixtures(league_id, season, days)
+    all_value_bets = []
+    analyzed = []
+
+    # Limitar a 8 partidos por escaneo para controlar cuota de API
+    for fx in fixtures[:8]:
+        fid = fx.get("fixture_id")
+        home = fx.get("home", {}).get("name")
+        away = fx.get("away", {}).get("name")
+        if not home or not away:
+            continue
+        try:
+            # Predicción del modelo
+            pred = run_prediction(home, away, is_national=False)
+            p = pred["prediction"]["prediction"]
+            model_probs = derive_market_probabilities(
+                p["p_win_a"] / 100, p["p_draw"] / 100, p["p_win_b"] / 100,
+                p.get("xg_a", 1.3), p.get("xg_b", 1.1),
+            )
+            # Cuotas multi-mercado reales
+            odds = apif.get_multi_market_odds(fid) if fid else {}
+            match_info = {"match": f"{home} vs {away}", "fixture_id": fid,
+                          "home": home, "away": away, "date": fx.get("date")}
+            vbets = scan_match(match_info, model_probs, odds)
+            all_value_bets.extend(vbets)
+            analyzed.append(match_info["match"])
+        except Exception as e:
+            print(f"[scan] Error en {home} vs {away}: {e}")
+            continue
+
+    portfolio = build_portfolio(
+        all_value_bets, bankroll=bankroll, kelly_mult=kelly_mult,
+        max_exposure=max_exposure, currency=currency,
+    )
+    portfolio["analyzed_matches"] = analyzed
+    portfolio["total_fixtures_scanned"] = len(analyzed)
+
+    # Resumen IA opcional
+    if gemini.has_gemini() and portfolio.get("has_value"):
+        portfolio["ai_summary"] = gemini.explain_bankroll_scan(portfolio, bankroll, currency)
+
+    return jsonify(portfolio)
 
 
 @app.route("/api/cache/stats")

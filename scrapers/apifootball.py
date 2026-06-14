@@ -497,3 +497,125 @@ def get_elo_summary(team_name: str, is_national: bool = True) -> dict:
         return {"team": team_name, "elo": rating, "source": "eloratings.net / clubelo.com"}
     except Exception as e:
         return {"team": team_name, "elo": None, "error": str(e)}
+
+
+# ─── NUEVO v5: Datos avanzados para análisis profundo ─────────────────────────
+
+def get_fixture_predictions(fixture_id: int) -> dict:
+    """
+    Predicciones propias de API-Football: porcentajes de victoria, consejo,
+    forma comparada, goles esperados. Datos muy ricos para alimentar la IA.
+    """
+    data = _request("predictions", {"fixture": fixture_id}, cache_type="lineup")
+    resp = data.get("response", [])
+    if not resp:
+        return {}
+    p = resp[0]
+    pred = p.get("predictions", {})
+    comp = p.get("comparison", {})
+    teams = p.get("teams", {})
+    return {
+        "winner": pred.get("winner", {}),
+        "win_or_draw": pred.get("win_or_draw"),
+        "under_over": pred.get("under_over"),
+        "goals_home": pred.get("goals", {}).get("home"),
+        "goals_away": pred.get("goals", {}).get("away"),
+        "advice": pred.get("advice"),
+        "percent": pred.get("percent", {}),  # {home, draw, away} en %
+        "comparison": {
+            "form": comp.get("form", {}),
+            "att": comp.get("att", {}),
+            "def": comp.get("def", {}),
+            "poisson": comp.get("poisson_distribution", {}),
+            "h2h": comp.get("h2h", {}),
+            "goals": comp.get("goals", {}),
+            "total": comp.get("total", {}),
+        },
+        "home_last5": teams.get("home", {}).get("last_5", {}),
+        "away_last5": teams.get("away", {}).get("last_5", {}),
+    }
+
+
+def get_fixture_statistics(fixture_id: int) -> dict:
+    """Estadísticas de un partido jugado: posesión, tiros, corners, etc."""
+    data = _request("fixtures/statistics", {"fixture": fixture_id}, cache_type="lineup")
+    out = {}
+    for i, team_stats in enumerate(data.get("response", [])):
+        team = team_stats.get("team", {})
+        stats = {}
+        for s in team_stats.get("statistics", []):
+            stats[s.get("type")] = s.get("value")
+        out["home" if i == 0 else "away"] = {
+            "team": team.get("name"), "stats": stats,
+        }
+    return out
+
+
+def get_team_injuries(team_id: int, season: int, league_id: int = None) -> list:
+    """Lesionados y sancionados de un equipo (afecta mucho la predicción)."""
+    params = {"team": team_id, "season": season}
+    if league_id:
+        params["league"] = league_id
+    data = _request("injuries", params, cache_type="lineup")
+    out = []
+    for item in data.get("response", []):
+        player = item.get("player", {})
+        out.append({
+            "name": player.get("name"),
+            "reason": player.get("reason"),
+            "type": player.get("type"),
+            "photo": player.get("photo"),
+        })
+    return out
+
+
+def get_multi_market_odds(fixture_id: int) -> dict:
+    """
+    Cuotas de MÚLTIPLES mercados, no solo 1X2:
+      - Match Winner (1X2)
+      - Goals Over/Under (2.5)
+      - Both Teams to Score (BTTS)
+      - Double Chance
+    Devuelve la mejor cuota disponible por opción.
+    """
+    data = _request("odds", {"fixture": fixture_id}, cache_type="lineup")
+
+    markets = {
+        "match_winner": {},      # Home/Draw/Away
+        "over_under": {},        # Over 2.5 / Under 2.5
+        "btts": {},              # Yes / No
+        "double_chance": {},     # Home/Draw, Home/Away, Draw/Away
+    }
+
+    # IDs de mercados en API-Football
+    BET_IDS = {
+        1: "match_winner", 5: "over_under", 8: "btts", 12: "double_chance",
+    }
+
+    for item in data.get("response", []):
+        for bookmaker in item.get("bookmakers", []):
+            for bet in bookmaker.get("bets", []):
+                bid = bet.get("id")
+                market = BET_IDS.get(bid)
+                if not market:
+                    continue
+                for value in bet.get("values", []):
+                    key = str(value.get("value"))
+                    try:
+                        odd = float(value.get("odd"))
+                    except (ValueError, TypeError):
+                        continue
+                    # Guardar la mejor (más alta) cuota por opción
+                    if key not in markets[market] or odd > markets[market][key]:
+                        markets[market][key] = odd
+
+    return markets
+
+
+def get_all_fixtures_for_scan(league_id: int, season: int, days_ahead: int = 7) -> list:
+    """
+    Partidos próximos con sus cuotas multi-mercado, listos para el escáner
+    de banca. Optimizado para minimizar requests.
+    """
+    fixtures = get_upcoming_fixtures(league_id, season, days_ahead)
+    return fixtures  # las cuotas se piden bajo demanda en el escáner

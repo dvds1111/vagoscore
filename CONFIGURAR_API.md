@@ -63,3 +63,40 @@ Si escribieras la clave dentro de un archivo `.py` y eso subiera a GitHub,
 cualquiera podría verla y usar (o agotar) tu cuota — o generarte cobros.
 Las variables de entorno mantienen el secreto fuera del código. Es la forma
 en que se hace en cualquier empresa de software.
+
+---
+
+# 🤖 Configurar la IA (Google Gemini) — OPCIONAL
+
+VagoScore puede usar IA para interpretar cada análisis en lenguaje natural.
+Usamos **Google Gemini Flash** porque es de los más baratos (tiene capa gratuita).
+
+## Paso 1 — Conseguir la clave (gratis)
+
+1. Ve a https://aistudio.google.com/app/apikey
+2. Inicia sesión con tu cuenta de Google
+3. Click en **Create API Key**
+4. Copia la clave (empieza con `AIza...`)
+
+## Paso 2 — Configurar en Render
+
+1. En tu servicio de Render → pestaña **Environment**
+2. Add Environment Variable:
+
+   | Key | Value |
+   |-----|-------|
+   | `GEMINI_API_KEY` | tu clave (AIza...) |
+
+3. Save Changes → Render redespliega solo
+
+¡Listo! Ahora aparece el botón "Generar análisis IA" en cada partido, y el
+escáner de banca incluye una lectura del estratega.
+
+## Nota de costo
+
+Gemini Flash tiene una capa gratuita generosa (suficiente para uso personal).
+Si la superas, cuesta centavos por millón de tokens. Cada análisis usa muy
+pocos tokens, así que el gasto es mínimo.
+
+⚠️ Igual que con API-Football: la clave va SOLO en las variables de entorno
+de Render, nunca en el código ni en el chat.
