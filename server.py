@@ -357,9 +357,26 @@ def scan_bankroll():
             # Predicción del modelo
             pred = run_prediction(home, away, is_national=False)
             p = pred["prediction"]["prediction"]
+            raw = pred["prediction"].get("raw", {})
+
+            ph, pd, pa = p["p_win_a"] / 100, p["p_draw"] / 100, p["p_win_b"] / 100
+
+            # Ajuste por ventaja de localía (HFA): si tenemos Elo de ambos,
+            # mezclamos la probabilidad del modelo con la probabilidad Elo que
+            # incorpora la localía del equipo de casa. Blend 70/30 para no
+            # sobre-corregir (el modelo ya captura parte de la fuerza).
+            elo_h, elo_a = raw.get("elo_a"), raw.get("elo_b")
+            if elo_h and elo_a:
+                from engine.quant import elo_probabilities_3way
+                elo_p = elo_probabilities_3way(elo_h, elo_a)
+                ph = 0.7 * ph + 0.3 * elo_p["home"]
+                pd = 0.7 * pd + 0.3 * elo_p["draw"]
+                pa = 0.7 * pa + 0.3 * elo_p["away"]
+                tot = ph + pd + pa
+                ph, pd, pa = ph / tot, pd / tot, pa / tot
+
             model_probs = derive_market_probabilities(
-                p["p_win_a"] / 100, p["p_draw"] / 100, p["p_win_b"] / 100,
-                p.get("xg_a", 1.3), p.get("xg_b", 1.1),
+                ph, pd, pa, p.get("xg_a", 1.3), p.get("xg_b", 1.1),
             )
             # Cuotas multi-mercado reales
             odds = apif.get_multi_market_odds(fid) if fid else {}

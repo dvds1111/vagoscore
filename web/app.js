@@ -694,7 +694,7 @@ function renderScan(d, cur) {
   const betsHTML = d.recommended_bets.map((b,i) => `
     <div class="scan-bet ${i===0?'top':''}">
       <div><span class="scan-rank">${i+1}</span><span class="sb-match">${b.match}</span><div class="sb-date">${b.date ? new Date(b.date).toLocaleDateString('es-CO',{day:'numeric',month:'short'}) : ''}</div></div>
-      <div><span class="sb-cell-lbl">${b.market_name || 'apuesta'}</span><span class="sb-bet">${b.bet_label}</span>${b.bookmaker ? `<span class="sb-book">⊞ ${b.bookmaker}</span>` : ''}</div>
+      <div><span class="sb-cell-lbl">${b.market_name || 'apuesta'}</span><span class="sb-bet">${b.bet_label}</span>${b.bookmaker ? `<span class="sb-book">⊞ ${b.bookmaker}</span>` : ''}${b.market_fair_prob ? `<span class="sb-fair">modelo ${Math.round(b.model_prob*100)}% vs casa ${Math.round(b.market_fair_prob*100)}%</span>` : ''}</div>
       <div><span class="sb-cell-lbl">edge</span><span class="sb-edge">+${b.edge_pct}%</span></div>
       <div><span class="sb-cell-lbl">cuota</span><span class="sb-odds">${b.decimal_odds}</span></div>
       <div><span class="sb-cell-lbl">apostar</span><span class="sb-stake">${fmtNum(b.stake)}</span></div>

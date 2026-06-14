@@ -120,6 +120,18 @@ def scan_match(match_info: dict, model_probs: dict, odds: dict) -> list:
     value_bets = []
     sources = odds.get("_sources", {})
 
+    # Calcular probabilidades JUSTAS del mercado 1X2 con devig MPTO.
+    # Esto nos dice qué probabilidad asigna realmente la casa (sin su margen),
+    # para detectar valor de forma rigurosa en vez de comparar contra la cuota cruda.
+    from engine.quant import fair_probabilities
+    mw = odds.get("match_winner", {})
+    fair_1x2 = None
+    if mw.get("Home") and mw.get("Draw") and mw.get("Away"):
+        try:
+            fair_1x2 = fair_probabilities(mw["Home"], mw["Draw"], mw["Away"], method="mpto")
+        except Exception:
+            fair_1x2 = None
+
     for market_key, options in ODDS_MAP.items():
         market_odds = odds.get(market_key, {})
         market_sources = sources.get(market_key, {})
@@ -138,6 +150,11 @@ def scan_match(match_info: dict, model_probs: dict, odds: dict) -> list:
             if p <= 0:
                 continue
 
+            # Probabilidad justa del mercado para esta opción (si la tenemos)
+            market_fair = None
+            if fair_1x2 and market_key == "match_winner":
+                market_fair = fair_1x2.get(opt.lower())
+
             edge = p * odd - 1
             if edge > 0.03:  # umbral mínimo de valor: 3%
                 kf = kelly_fraction(p, odd)
@@ -155,6 +172,7 @@ def scan_match(match_info: dict, model_probs: dict, odds: dict) -> list:
                     "bookmaker": bookmaker or match_info.get("bookmaker"),
                     "model_prob": round(p, 4),
                     "implied_prob": implied_probability(odd),
+                    "market_fair_prob": round(market_fair, 4) if market_fair else None,
                     "decimal_odds": odd,
                     "edge_pct": round(edge * 100, 2),
                     "kelly_full": kf,
