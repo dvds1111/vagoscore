@@ -29,10 +29,25 @@ def index():
 
 @app.route("/api/status")
 def status():
+    import os
+    # Diagnóstico: qué variables de entorno relacionadas con IA existen
+    # (mostramos solo si existen y su longitud, NUNCA el valor real)
+    deepseek_present = "DEEPSEEK_API_KEY" in os.environ
+    deepseek_len = len(os.environ.get("DEEPSEEK_API_KEY", ""))
+    # Buscar variables con nombres parecidos (errores comunes de tipeo)
+    similar_keys = [k for k in os.environ.keys()
+                    if "DEEPSEEK" in k.upper() or "DEEP_SEEK" in k.upper()
+                    or "GEMINI" in k.upper() or "AI_KEY" in k.upper()]
     return jsonify({
         "apifootball_connected": config.has_apifootball(),
         "ai_connected": gemini.has_ai(),
         "cache": cache_stats(),
+        "diagnostico_ia": {
+            "variable_DEEPSEEK_API_KEY_existe": deepseek_present,
+            "longitud_de_la_clave": deepseek_len,
+            "empieza_con_sk": os.environ.get("DEEPSEEK_API_KEY", "").startswith("sk-"),
+            "variables_parecidas_encontradas": similar_keys,
+        },
     })
 
 
