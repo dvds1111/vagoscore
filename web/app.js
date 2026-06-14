@@ -13,6 +13,7 @@ document.querySelectorAll('.nl').forEach(btn => {
     btn.classList.add('active');
     $('view-' + btn.dataset.view).classList.add('active');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (btn.dataset.view === 'livehub' && typeof populateLiveHubLeagues === 'function') populateLiveHubLeagues();
   });
 });
 function goView(name) {
@@ -896,5 +897,51 @@ async function renderLiveMatch(fixtureId, isRefresh) {
       <div style="padding:1rem 2rem 3rem;text-align:center;font-family:var(--ff-mono);font-size:0.62rem;color:#555">↻ Se actualiza solo cada 30 segundos</div>`;
   } catch(e) {
     if (!isRefresh) zone.innerHTML = `<div class="scan-verdict" style="border-color:var(--red);margin:2rem"><h3>Error</h3><p>No se pudo cargar el partido en vivo.</p></div>`;
+  }
+}
+
+/* ═══════════════ LIVE HUB (partidos en vivo por competición) ═══════════════ */
+
+// Poblar selector de competición del hub al entrar a la vista
+function populateLiveHubLeagues() {
+  const sel = $('livehub-league');
+  if (!sel || sel.options.length > 1) return;
+  if (!leaguesData.length) return;
+  sel.innerHTML = '<option value="">Todas las competiciones</option>' +
+    leaguesData.map((l,i) => `<option value="${l.id}">${l.name}${l.country ? ' · '+l.country : ''}</option>`).join('');
+}
+
+const livehubBtn = $('livehub-btn');
+if (livehubBtn) livehubBtn.addEventListener('click', loadLiveHub);
+
+async function loadLiveHub() {
+  const leagueId = $('livehub-league').value;
+  $('livehub-loading').hidden = false;
+  $('livehub-results').innerHTML = '';
+  try {
+    const url = leagueId ? `/api/live?league=${leagueId}` : '/api/live';
+    const d = await fetch(url).then(r => r.json());
+    $('livehub-loading').hidden = true;
+    const live = d.live || [];
+    if (!live.length) {
+      $('livehub-results').innerHTML = `<div style="margin:1rem 2rem;padding:2rem;background:var(--gray-3);border:1px solid var(--border);text-align:center;font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted)">No hay partidos en vivo ${leagueId ? 'en esta competición' : ''} en este momento.<br>Los partidos en vivo aparecen solo mientras se están jugando.</div>`;
+      return;
+    }
+    $('livehub-results').innerHTML = `
+      <div style="padding:0 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--red)">● ${live.length} PARTIDO${live.length>1?'S':''} EN VIVO</div>
+      <div class="livehub-grid">${live.map(m => `
+        <div class="livehub-card" onclick="openLiveMatch(${m.fixture_id||0})">
+          <div class="lhc-league">${m.league || ''}</div>
+          <div class="lhc-teams">
+            <div class="lhc-team">${m.home_logo?`<img src="${m.home_logo}">`:''}<span>${m.home}</span></div>
+            <div class="lhc-score">${m.score}</div>
+            <div class="lhc-team">${m.away_logo?`<img src="${m.away_logo}">`:''}<span>${m.away}</span></div>
+          </div>
+          <div class="lhc-min">● ${m.elapsed || 0}' EN VIVO</div>
+          <div class="lhc-cta">Ver detalle y sugerencias →</div>
+        </div>`).join('')}</div>`;
+  } catch(e) {
+    $('livehub-loading').hidden = true;
+    $('livehub-results').innerHTML = `<div style="margin:1rem 2rem;padding:1.5rem;text-align:center;color:var(--red);font-family:var(--ff-mono);font-size:0.8rem">Error al cargar partidos en vivo.</div>`;
   }
 }

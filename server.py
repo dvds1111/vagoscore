@@ -134,7 +134,8 @@ def fixtures():
 def live():
     if not config.has_apifootball():
         return jsonify({"live": []})
-    return jsonify({"live": apif.get_live_fixtures()})
+    league_id = request.args.get("league", type=int)
+    return jsonify({"live": apif.get_live_fixtures(league_id)})
 
 
 @app.route("/api/live/<int:fixture_id>")

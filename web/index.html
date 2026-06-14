@@ -33,6 +33,7 @@
   <div class="nav-links">
     <button class="nl active" data-view="home">Inicio</button>
     <button class="nl" data-view="fixtures">Partidos</button>
+    <button class="nl" data-view="livehub">● En Vivo</button>
     <button class="nl" data-view="analyze">Análisis</button>
     <button class="nl" data-view="bankroll">Banca</button>
     <button class="nl" data-view="backtest">Backtest</button>
@@ -256,6 +257,23 @@
   <div id="opt-results" hidden></div>
 </section>
 
+<!-- ══════════════ LIVE HUB (partidos en vivo por competición) ══════════════ -->
+<section class="view" id="view-livehub">
+  <div class="page-head"><h2 class="page-title">PARTIDOS EN VIVO</h2></div>
+  <p class="page-sub">Mira los partidos que se están jugando ahora mismo. Filtra por competición para seguir, por ejemplo, todos los del Mundial en directo.</p>
+  <div class="kelly-form">
+    <div class="kf-field"><label>COMPETICIÓN</label>
+      <select id="livehub-league"><option value="">Todas las competiciones</option></select>
+    </div>
+    <button class="btn-run full" id="livehub-btn">● VER PARTIDOS EN VIVO</button>
+  </div>
+  <div class="loading" id="livehub-loading" hidden>
+    <div class="ld-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p>Buscando partidos en vivo…</p>
+  </div>
+  <div id="livehub-results"></div>
+</section>
+
 <!-- ══════════════ LIVE MATCH ══════════════ -->
 <section class="view" id="view-live">
   <div class="page-head">
@@ -278,6 +296,7 @@
   </div>
 </footer>
 
+<script src="worldmap_data.js"></script>
 <script src="worldmap.js"></script>
 <script src="app.js"></script>
 </body>

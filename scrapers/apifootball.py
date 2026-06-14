@@ -14,7 +14,8 @@ from cache.db import cache_get, cache_set
 
 def _request(endpoint: str, params: dict = None, cache_type: str = "team_stats") -> dict:
     """
-    Llamada genérica a API-Football con caché.
+    Llamada genérica a API-Football con caché y reintentos con backoff
+    exponencial (protege contra rate-limits 429 y errores de servidor 5xx).
     """
     if not config.has_apifootball():
         return {"error": "API key no configurada", "response": []}
@@ -27,15 +28,41 @@ def _request(endpoint: str, params: dict = None, cache_type: str = "team_stats")
         return cached
 
     url = f"{config.APIFOOTBALL_BASE}/{endpoint}"
-    try:
-        resp = requests.get(url, headers=config.APIFOOTBALL_HEADERS, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        cache_set(cache_key, data)
-        return data
-    except requests.RequestException as e:
-        print(f"[apifootball] Error en {endpoint}: {e}")
-        return {"error": str(e), "response": []}
+    max_attempts = 4
+    delay = 1.0  # segundos; se duplica en cada reintento
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.get(url, headers=config.APIFOOTBALL_HEADERS,
+                                params=params, timeout=15)
+
+            # Rate-limit o error de servidor → reintentar con espera creciente
+            if resp.status_code == 429 or resp.status_code >= 500:
+                if attempt < max_attempts:
+                    import time
+                    print(f"[apifootball] {resp.status_code} en {endpoint}, "
+                          f"reintento {attempt}/{max_attempts} en {delay}s")
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                return {"error": f"HTTP {resp.status_code}", "response": []}
+
+            resp.raise_for_status()
+            data = resp.json()
+            cache_set(cache_key, data)
+            return data
+
+        except requests.RequestException as e:
+            if attempt < max_attempts:
+                import time
+                print(f"[apifootball] Error en {endpoint} (intento {attempt}): {e}")
+                time.sleep(delay)
+                delay *= 2
+                continue
+            print(f"[apifootball] Error final en {endpoint}: {e}")
+            return {"error": str(e), "response": []}
+
+    return {"error": "max reintentos", "response": []}
 
 
 # ─── Ligas / competiciones ────────────────────────────────────────────────────
@@ -117,22 +144,35 @@ def get_upcoming_fixtures(league_id: int, season: int, days_ahead: int = 14) -> 
     return fixtures
 
 
-def get_live_fixtures() -> list[dict]:
-    """Partidos en vivo ahora mismo."""
-    data = _request("fixtures", {"live": "all"}, cache_type="lineup")
+def get_live_fixtures(league_id: int = None) -> list[dict]:
+    """
+    Partidos en vivo ahora mismo. Si se pasa league_id, filtra solo
+    los de esa competición (ej. todos los del Mundial en vivo).
+    """
+    params = {"live": "all"}
+    if league_id:
+        # API-Football permite live por liga concreta
+        params["league"] = league_id
+    data = _request("fixtures", params, cache_type="lineup")
     out = []
     for item in data.get("response", []):
         fx = item.get("fixture", {})
         teams = item.get("teams", {})
         goals = item.get("goals", {})
+        league = item.get("league", {})
         out.append({
             "fixture_id": fx.get("id"),
             "elapsed": fx.get("status", {}).get("elapsed"),
+            "status": fx.get("status", {}).get("short"),
             "home": teams.get("home", {}).get("name"),
             "away": teams.get("away", {}).get("name"),
             "home_logo": teams.get("home", {}).get("logo"),
             "away_logo": teams.get("away", {}).get("logo"),
+            "home_id": teams.get("home", {}).get("id"),
+            "away_id": teams.get("away", {}).get("id"),
             "score": f"{goals.get('home', 0)}-{goals.get('away', 0)}",
+            "league": league.get("name"),
+            "league_id": league.get("id"),
         })
     return out
 
@@ -683,4 +723,43 @@ def get_live_match_detail(fixture_id: int) -> dict:
         "goals_events": [e for e in events if e["type"] == "Goal"],
         "stats": stats,
         "league": m.get("league", {}).get("name"),
+    }
+
+
+def get_odds_table(fixture_id: int) -> dict:
+    """
+    Tabla comparativa de cuotas 1X2 de TODAS las casas de apuestas
+    disponibles para un partido (no solo la mejor). Para que el usuario
+    vea dónde está la mejor línea de cada resultado.
+    """
+    data = _request("odds", {"fixture": fixture_id}, cache_type="lineup")
+    table = []
+    best = {"Home": (0, None), "Draw": (0, None), "Away": (0, None)}
+
+    for item in data.get("response", []):
+        for bm in item.get("bookmakers", []):
+            mw = next((b for b in bm.get("bets", []) if b.get("id") == 1), None)
+            if not mw:
+                continue
+            vals = {v.get("value"): v.get("odd") for v in mw.get("values", [])}
+            row = {
+                "bookmaker": bm.get("name"),
+                "home": vals.get("Home"),
+                "draw": vals.get("Draw"),
+                "away": vals.get("Away"),
+            }
+            table.append(row)
+            # Rastrear la mejor cuota de cada resultado
+            for key, col in [("Home", "home"), ("Draw", "draw"), ("Away", "away")]:
+                try:
+                    o = float(vals.get(key, 0))
+                    if o > best[key][0]:
+                        best[key] = (o, bm.get("name"))
+                except (ValueError, TypeError):
+                    pass
+
+    return {
+        "table": table,
+        "best": {k: {"odd": v[0], "bookmaker": v[1]} for k, v in best.items() if v[1]},
+        "count": len(table),
     }
