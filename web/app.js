@@ -256,16 +256,17 @@ function buildDetailPanels(pred, a, b) {
 
   // Panel 1: ELO numérico
   const eloA = raw.elo_a, eloB = raw.elo_b;
+  const eloEst = raw.elo_is_estimate;
   if (eloA != null || eloB != null) {
     const diff = (eloA && eloB) ? Math.abs(eloA - eloB) : null;
     const fav = (eloA && eloB) ? (eloA > eloB ? a : b) : '—';
     html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
-      <span class="dp-title"><span class="dp-icon">▦</span>Ranking ELO (número real)</span><span class="dp-chevron">▾</span></div>
+      <span class="dp-title"><span class="dp-icon">▦</span>Ranking ELO${eloEst ? ' <span style="color:#666;font-size:0.9em">(derivado)</span>' : ''}</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
         <div class="elo-side"><div class="elo-num a">${eloA ?? '—'}</div><div class="elo-team">${a}</div></div>
         <div class="elo-diff"><strong>${diff ?? '—'}</strong>de diferencia<br><span style="color:var(--lime)">${fav} favorito</span></div>
         <div class="elo-side"><div class="elo-num b">${eloB ?? '—'}</div><div class="elo-team">${b}</div></div>
-      </div><div class="elo-src">Fuente: eloratings.net / clubelo.com</div></div></div></div>`;
+      </div><div class="elo-src">${eloEst ? 'Derivado de forma reciente real (API-Football)' : 'Fuente: eloratings.net / clubelo.com'}</div></div></div></div>`;
   }
 
   // Panel 2: Últimos partidos (forma)
@@ -283,14 +284,15 @@ function buildDetailPanels(pred, a, b) {
 
   // Panel 3: Valor de mercado de la plantilla
   const mvA = raw.market_value_a, mvB = raw.market_value_b;
+  const mvEst = raw.market_is_estimate;
   if (mvA != null || mvB != null) {
     html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
-      <span class="dp-title"><span class="dp-icon">$</span>Valor de plantilla</span><span class="dp-chevron">▾</span></div>
+      <span class="dp-title"><span class="dp-icon">$</span>Valor de plantilla${mvEst ? ' <span style="color:#666;font-size:0.9em">(estimado)</span>' : ''}</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
         <div class="elo-side"><div class="elo-num a" style="font-size:2rem">${fmtMV(mvA)}</div><div class="elo-team">${a}</div></div>
-        <div class="elo-diff"><span style="color:var(--lime)">Transfermarkt</span></div>
+        <div class="elo-diff"><span style="color:var(--lime)">${mvEst ? 'rating + ELO' : 'Transfermarkt'}</span></div>
         <div class="elo-side"><div class="elo-num b" style="font-size:2rem">${fmtMV(mvB)}</div><div class="elo-team">${b}</div></div>
-      </div></div></div></div>`;
+      </div>${mvEst ? '<div class="elo-src">Estimación derivada de la calidad medible del plantel (API-Football no expone el valor exacto en €)</div>' : ''}</div></div></div>`;
   }
 
   // Panel 4: Head to head
