@@ -15,6 +15,7 @@ from engine.scorer import WeightConfig
 from engine.kelly import analyze_bankroll, simulate_growth
 from engine.backtest import run_backtest
 from engine.bankroll_scanner import derive_market_probabilities, scan_match, build_portfolio
+from engine.weight_optimizer import optimize_weights
 from cache.db import cache_stats, cache_clear
 from scrapers import apifootball as apif
 from scrapers import gemini
@@ -258,6 +259,7 @@ def scan_bankroll():
     fixtures = apif.get_upcoming_fixtures(league_id, season, days)
     all_value_bets = []
     analyzed = []
+    bookmakers_used = set()
 
     # Limitar a 8 partidos por escaneo para controlar cuota de API
     for fx in fixtures[:8]:
@@ -276,6 +278,8 @@ def scan_bankroll():
             )
             # Cuotas multi-mercado reales
             odds = apif.get_multi_market_odds(fid) if fid else {}
+            for bm in odds.get("_bookmakers", []):
+                bookmakers_used.add(bm)
             match_info = {"match": f"{home} vs {away}", "fixture_id": fid,
                           "home": home, "away": away, "date": fx.get("date")}
             vbets = scan_match(match_info, model_probs, odds)
@@ -291,12 +295,36 @@ def scan_bankroll():
     )
     portfolio["analyzed_matches"] = analyzed
     portfolio["total_fixtures_scanned"] = len(analyzed)
+    portfolio["bookmakers_used"] = sorted(bookmakers_used)
 
     # Resumen IA opcional
     if gemini.has_ai() and portfolio.get("has_value"):
         portfolio["ai_summary"] = gemini.explain_bankroll_scan(portfolio, bankroll, currency)
 
     return jsonify(portfolio)
+
+
+@app.route("/api/optimize-weights", methods=["POST"])
+def optimize_weights_endpoint():
+    """
+    Ajusta los pesos del modelo a partir de partidos históricos.
+    Recibe una lista de partidos con sub-scores y resultado real, o
+    los genera desde un conjunto de equipos/liga si se pide.
+    """
+    data = request.get_json(force=True)
+    historical = data.get("historical", [])
+    iterations = int(data.get("iterations", 3000))
+
+    if not historical:
+        return jsonify({
+            "success": False,
+            "reason": "No se proporcionaron partidos históricos. "
+                      "Esta función necesita datos de partidos ya jugados con "
+                      "sus sub-scores y resultados reales.",
+        }), 200
+
+    result = optimize_weights(historical, iterations=iterations)
+    return jsonify(result)
 
 
 @app.route("/api/cache/stats")

@@ -240,6 +240,20 @@
     <button class="btn-run full" id="bt-btn">EJECUTAR BACKTEST ↗</button>
   </div>
   <div id="bt-results" hidden></div>
+
+  <div class="section-header" style="padding:3rem 2rem 1rem"><span class="sh-num">+</span><h2 class="sh-title">AJUSTE AUTOMÁTICO DE PESOS</h2><div class="sh-line"></div></div>
+  <p class="page-sub">El modelo aprende de los datos: prueba miles de combinaciones de pesos y encuentra la que mejor habría predicho los partidos históricos que le des.</p>
+  <div class="bt-form">
+    <label class="bt-lbl">PARTIDOS HISTÓRICOS CON SUB-SCORES (JSON)</label>
+    <textarea id="opt-in" rows="8">[
+  {"team_scores_a":{"sofascore":75,"elo":80,"chemistry":60,"h2h":55,"market":85},"team_scores_b":{"sofascore":60,"elo":55,"chemistry":65,"h2h":50,"market":50},"actual":"home"},
+  {"team_scores_a":{"sofascore":50,"elo":45,"chemistry":55,"h2h":60,"market":40},"team_scores_b":{"sofascore":70,"elo":78,"chemistry":62,"h2h":58,"market":80},"actual":"away"},
+  {"team_scores_a":{"sofascore":65,"elo":62,"chemistry":58,"h2h":55,"market":60},"team_scores_b":{"sofascore":63,"elo":60,"chemistry":59,"h2h":54,"market":58},"actual":"draw"}
+]</textarea>
+    <button class="btn-run full" id="opt-btn">⚙ OPTIMIZAR PESOS ↗</button>
+    <p class="hint-autofill" style="color:var(--muted)">Cuantos más partidos (idealmente 30+), más confiable el ajuste</p>
+  </div>
+  <div id="opt-results" hidden></div>
 </section>
 
 <!-- FOOTER -->
@@ -253,6 +267,7 @@
   </div>
 </footer>
 
+<script src="worldmap.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

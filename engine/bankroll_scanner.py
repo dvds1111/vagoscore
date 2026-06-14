@@ -58,7 +58,37 @@ def derive_market_probabilities(p_home: float, p_draw: float, p_away: float,
     return probs
 
 
-# Etiquetas legibles por opción de mercado
+def make_bet_label(opt: str, home: str, away: str) -> str:
+    """
+    Construye una etiqueta legible con el NOMBRE del equipo cuando aplica.
+    Ej: 'Home' → 'Gana Liverpool', 'Home/Draw' → 'Liverpool o empate'.
+    """
+    mapping = {
+        "Home": f"Gana {home}",
+        "Away": f"Gana {away}",
+        "Draw": "Empate",
+        "Over 2.5": "Más de 2.5 goles",
+        "Under 2.5": "Menos de 2.5 goles",
+        "Yes": "Ambos equipos marcan",
+        "No": "No marcan ambos",
+        "Home/Draw": f"{home} o empate",
+        "Home/Away": f"{home} o {away} (no empate)",
+        "Draw/Away": f"Empate o {away}",
+    }
+    return mapping.get(opt, opt)
+
+
+def make_market_name(market_key: str) -> str:
+    """Nombre legible del tipo de mercado."""
+    return {
+        "match_winner": "Resultado (1X2)",
+        "over_under": "Total de goles",
+        "btts": "Ambos marcan",
+        "double_chance": "Doble oportunidad",
+    }.get(market_key, market_key)
+
+
+# Etiquetas legibles por opción de mercado (genéricas, sin nombre)
 MARKET_LABELS = {
     "Home": "Gana local", "Draw": "Empate", "Away": "Gana visitante",
     "Over 2.5": "Más de 2.5 goles", "Under 2.5": "Menos de 2.5 goles",
@@ -88,15 +118,19 @@ def scan_match(match_info: dict, model_probs: dict, odds: dict) -> list:
     Returns: lista de apuestas con valor (edge > 0)
     """
     value_bets = []
+    sources = odds.get("_sources", {})
 
     for market_key, options in ODDS_MAP.items():
         market_odds = odds.get(market_key, {})
+        market_sources = sources.get(market_key, {})
         for opt in options:
             # Buscar la cuota (las claves de over/under en la API pueden variar)
             odd = market_odds.get(opt)
+            bookmaker = market_sources.get(opt)
             if odd is None and market_key == "over_under":
                 # API a veces usa "Over"/"Under" con línea aparte
                 odd = market_odds.get(opt.split()[0])
+                bookmaker = market_sources.get(opt.split()[0])
             if not odd or odd <= 1:
                 continue
 
@@ -114,8 +148,11 @@ def scan_match(match_info: dict, model_probs: dict, odds: dict) -> list:
                     "away": match_info.get("away"),
                     "date": match_info.get("date"),
                     "market": market_key,
+                    "market_name": make_market_name(market_key),
                     "option": opt,
-                    "bet_label": MARKET_LABELS.get(opt, opt),
+                    "bet_label": make_bet_label(opt, match_info.get("home", "Local"),
+                                                match_info.get("away", "Visitante")),
+                    "bookmaker": bookmaker or match_info.get("bookmaker"),
                     "model_prob": round(p, 4),
                     "implied_prob": implied_probability(odd),
                     "decimal_odds": odd,
@@ -149,20 +186,31 @@ def build_portfolio(all_value_bets: list, bankroll: float,
                        "Lo óptimo es no apostar esta jornada.",
         }
 
-    # Ordenar por edge descendente y limitar
-    bets = sorted(all_value_bets, key=lambda b: b["edge_pct"], reverse=True)[:max_bets]
+    # Ordenar por edge descendente
+    bets = sorted(all_value_bets, key=lambda b: b["edge_pct"], reverse=True)
 
-    # Evitar apuestas contradictorias del mismo partido (ej. Over y Under)
-    # Regla simple: máximo 1 apuesta por partido (la de mayor edge)
-    seen_matches = set()
+    # Permitir varias apuestas del mismo partido SIEMPRE que no sean
+    # contradictorias entre sí. Definimos grupos mutuamente excluyentes:
+    # dentro de un mismo grupo, solo entra la de mayor edge.
+    # (ej: no tiene sentido "Gana local" Y "Gana visitante" a la vez)
+    EXCLUSIVE_GROUPS = {
+        "Home": "resultado", "Draw": "resultado", "Away": "resultado",
+        "Home/Draw": "resultado", "Home/Away": "resultado", "Draw/Away": "resultado",
+        "Over 2.5": "goles", "Under 2.5": "goles",
+        "Yes": "btts", "No": "btts",
+    }
+    seen = set()  # (fixture_id, grupo)
     filtered = []
     for b in bets:
         mid = b["fixture_id"] or b["match"]
-        if mid in seen_matches:
+        group = EXCLUSIVE_GROUPS.get(b["option"], b["option"])
+        key = (mid, group)
+        if key in seen:
             continue
-        seen_matches.add(mid)
+        seen.add(key)
         filtered.append(b)
-    bets = filtered
+    # Limitar al máximo total de apuestas
+    bets = filtered[:max_bets]
 
     # Stake bruto por Kelly fraccionario
     for b in bets:

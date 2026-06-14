@@ -678,11 +678,14 @@ function renderScan(d, cur) {
   const betsHTML = d.recommended_bets.map((b,i) => `
     <div class="scan-bet ${i===0?'top':''}">
       <div><span class="scan-rank">${i+1}</span><span class="sb-match">${b.match}</span><div class="sb-date">${b.date ? new Date(b.date).toLocaleDateString('es-CO',{day:'numeric',month:'short'}) : ''}</div></div>
-      <div><span class="sb-cell-lbl">apuesta</span><span class="sb-bet">${b.bet_label}</span></div>
+      <div><span class="sb-cell-lbl">${b.market_name || 'apuesta'}</span><span class="sb-bet">${b.bet_label}</span>${b.bookmaker ? `<span class="sb-book">⊞ ${b.bookmaker}</span>` : ''}</div>
       <div><span class="sb-cell-lbl">edge</span><span class="sb-edge">+${b.edge_pct}%</span></div>
       <div><span class="sb-cell-lbl">cuota</span><span class="sb-odds">${b.decimal_odds}</span></div>
       <div><span class="sb-cell-lbl">apostar</span><span class="sb-stake">${fmtNum(b.stake)}</span></div>
     </div>`).join('');
+
+  const booksHTML = d.bookmakers_used && d.bookmakers_used.length
+    ? `<div class="scan-books"><span class="sb-books-lbl">Casas consultadas:</span> ${d.bookmakers_used.join(' · ')}</div>` : '';
 
   $('sc-results').innerHTML = `
     <div class="scan-verdict"><h3>Cartera de la jornada</h3><p>${d.verdict}</p></div>
@@ -695,7 +698,8 @@ function renderScan(d, cur) {
     </div>
     <div style="padding:0 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">CARTERA RECOMENDADA · ${d.total_fixtures_scanned} PARTIDOS ANALIZADOS</div>
     <div class="scan-bets">${betsHTML}</div>
-    <p style="padding:0 2rem 2rem;font-family:var(--ff-mono);font-size:0.65rem;color:#555;line-height:1.7">Los montos respetan tu tope de exposición del ${d.max_exposure_pct}% por jornada con ${d.kelly_mult === 0.5 ? '½' : d.kelly_mult === 1 ? 'Kelly completo' : '¼'} Kelly. Herramienta de cálculo, no consejo financiero.</p>`;
+    ${booksHTML}
+    <p style="padding:0 2rem 2rem;font-family:var(--ff-mono);font-size:0.65rem;color:#555;line-height:1.7">Las cuotas mostradas son las mejores disponibles entre las casas que API-Football lista para tu cuenta (varían según país). Los montos respetan tu tope de exposición del ${d.max_exposure_pct}% por jornada con ${d.kelly_mult === 0.5 ? '½' : d.kelly_mult === 1 ? 'Kelly completo' : '¼'} Kelly. Herramienta de cálculo, no consejo financiero.</p>`;
 }
 
 /* ═══ PANEL DE IA EN ANÁLISIS ═══ */
@@ -721,4 +725,55 @@ async function requestAIAnalysis() {
     const zone = $('ai-zone');
     if (zone) zone.innerHTML = `<div class="ai-panel"><p style="color:var(--red)">No se pudo generar el análisis de IA.</p></div>`;
   }
+}
+
+/* ═══════════════ OPTIMIZADOR DE PESOS ═══════════════ */
+const optBtn = $('opt-btn');
+if (optBtn) optBtn.addEventListener('click', async () => {
+  let historical;
+  try { historical = JSON.parse($('opt-in').value); }
+  catch { alert('El JSON no es válido. Revisa el formato.'); return; }
+
+  optBtn.textContent = 'OPTIMIZANDO…'; optBtn.disabled = true;
+  try {
+    const d = await fetch('/api/optimize-weights', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ historical, iterations: 3000 }) }).then(r=>r.json());
+    renderOptResults(d);
+    $('opt-results').hidden = false;
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { optBtn.textContent = '⚙ OPTIMIZAR PESOS ↗'; optBtn.disabled = false; }
+});
+
+function renderOptResults(d) {
+  const zone = $('opt-results');
+  if (!d.success) {
+    zone.innerHTML = `<div class="scan-verdict" style="border-color:var(--red)"><h3>No se pudo optimizar</h3><p>${d.reason}</p></div>`;
+    return;
+  }
+  const names = { sofascore_form:'Forma jugadores', elo_rating:'Ranking ELO', chemistry:'Química', h2h:'Head-to-head', market_value:'Valor mercado' };
+  const ow = d.optimized_weights, dw = d.default_weights;
+
+  const bars = Object.keys(ow).map(k => {
+    const optV = ow[k]*100, defV = dw[k]*100;
+    return `<div class="optw-row">
+      <div class="optw-name">${names[k]}</div>
+      <div class="optw-bars">
+        <div class="optw-bar-track"><div class="optw-bar def" style="width:${defV}%"></div></div>
+        <div class="optw-bar-track"><div class="optw-bar opt" style="width:${optV}%"></div></div>
+      </div>
+      <div class="optw-vals"><span class="optw-def">${defV.toFixed(0)}%</span><span class="optw-arrow">→</span><span class="optw-opt">${optV.toFixed(0)}%</span></div>
+    </div>`;
+  }).join('');
+
+  zone.innerHTML = `
+    <div class="scan-verdict"><h3>Pesos optimizados</h3><p>${d.verdict}</p></div>
+    ${d.warning ? `<div class="opt-warning">⚠ ${d.warning}</div>` : ''}
+    <div class="scan-summary">
+      <div class="ss-cell"><div class="ss-val">${d.n_matches}</div><div class="ss-lbl">partidos</div></div>
+      <div class="ss-cell"><div class="ss-val">${d.base_brier}</div><div class="ss-lbl">error inicial</div></div>
+      <div class="ss-cell"><div class="ss-val lime">${d.optimized_brier}</div><div class="ss-lbl">error optimizado</div></div>
+      <div class="ss-cell"><div class="ss-val lime">${d.improvement_pct}%</div><div class="ss-lbl">mejora</div></div>
+    </div>
+    <div style="padding:0 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">DEFAULT (gris) → OPTIMIZADO (lima)</div>
+    <div class="optw-list">${bars}</div>
+    <p style="padding:1rem 2rem 2rem;font-family:var(--ff-mono);font-size:0.65rem;color:#555;line-height:1.7">Estos pesos minimizan el error sobre tus datos históricos. Optimizar el pasado no garantiza el futuro: con muestras pequeñas, el riesgo de sobreajuste es real. Úsalos como punto de partida, no como verdad absoluta.</p>`;
 }

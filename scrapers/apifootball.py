@@ -576,24 +576,25 @@ def get_multi_market_odds(fixture_id: int) -> dict:
       - Goals Over/Under (2.5)
       - Both Teams to Score (BTTS)
       - Double Chance
-    Devuelve la mejor cuota disponible por opción.
+    Devuelve la mejor cuota disponible por opción, registrando de qué
+    casa de apuestas proviene cada una.
     """
     data = _request("odds", {"fixture": fixture_id}, cache_type="lineup")
 
     markets = {
-        "match_winner": {},      # Home/Draw/Away
-        "over_under": {},        # Over 2.5 / Under 2.5
-        "btts": {},              # Yes / No
-        "double_chance": {},     # Home/Draw, Home/Away, Draw/Away
+        "match_winner": {}, "over_under": {}, "btts": {}, "double_chance": {},
     }
+    sources = {  # de qué casa salió la mejor cuota de cada opción
+        "match_winner": {}, "over_under": {}, "btts": {}, "double_chance": {},
+    }
+    bookmakers_seen = set()
 
-    # IDs de mercados en API-Football
-    BET_IDS = {
-        1: "match_winner", 5: "over_under", 8: "btts", 12: "double_chance",
-    }
+    BET_IDS = {1: "match_winner", 5: "over_under", 8: "btts", 12: "double_chance"}
 
     for item in data.get("response", []):
         for bookmaker in item.get("bookmakers", []):
+            bm_name = bookmaker.get("name", "—")
+            bookmakers_seen.add(bm_name)
             for bet in bookmaker.get("bets", []):
                 bid = bet.get("id")
                 market = BET_IDS.get(bid)
@@ -605,10 +606,12 @@ def get_multi_market_odds(fixture_id: int) -> dict:
                         odd = float(value.get("odd"))
                     except (ValueError, TypeError):
                         continue
-                    # Guardar la mejor (más alta) cuota por opción
                     if key not in markets[market] or odd > markets[market][key]:
                         markets[market][key] = odd
+                        sources[market][key] = bm_name
 
+    markets["_sources"] = sources
+    markets["_bookmakers"] = sorted(bookmakers_seen)
     return markets
 
 
