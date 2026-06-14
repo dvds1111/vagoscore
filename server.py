@@ -31,7 +31,7 @@ def index():
 def status():
     return jsonify({
         "apifootball_connected": config.has_apifootball(),
-        "gemini_connected": gemini.has_gemini(),
+        "ai_connected": gemini.has_ai(),
         "cache": cache_stats(),
     })
 
@@ -189,9 +189,9 @@ def backtest():
 
 @app.route("/api/ai/analyze", methods=["POST"])
 def ai_analyze():
-    """Genera el análisis experto con IA (Gemini) de un partido ya predicho."""
-    if not gemini.has_gemini():
-        return jsonify({"available": False, "reason": "Gemini no configurado"}), 200
+    """Genera el análisis experto con IA (Deepseek) de un partido ya predicho."""
+    if not gemini.has_ai():
+        return jsonify({"available": False, "reason": "IA no configurada"}), 200
     data = request.get_json(force=True)
     prediction_data = data.get("prediction_data")
     if not prediction_data:
@@ -278,7 +278,7 @@ def scan_bankroll():
     portfolio["total_fixtures_scanned"] = len(analyzed)
 
     # Resumen IA opcional
-    if gemini.has_gemini() and portfolio.get("has_value"):
+    if gemini.has_ai() and portfolio.get("has_value"):
         portfolio["ai_summary"] = gemini.explain_bankroll_scan(portfolio, bankroll, currency)
 
     return jsonify(portfolio)

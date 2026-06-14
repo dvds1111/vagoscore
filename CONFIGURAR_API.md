@@ -66,17 +66,24 @@ en que se hace en cualquier empresa de software.
 
 ---
 
-# 🤖 Configurar la IA (Google Gemini) — OPCIONAL
+# 🤖 Configurar la IA (Deepseek) — OPCIONAL
 
 VagoScore puede usar IA para interpretar cada análisis en lenguaje natural.
-Usamos **Google Gemini Flash** porque es de los más baratos (tiene capa gratuita).
+Usamos **Deepseek** porque es extremadamente barato y tiene muy buena calidad.
 
-## Paso 1 — Conseguir la clave (gratis)
+## Paso 1 — Conseguir la clave (gratis, con saldo mínimo)
 
-1. Ve a https://aistudio.google.com/app/apikey
-2. Inicia sesión con tu cuenta de Google
-3. Click en **Create API Key**
-4. Copia la clave (empieza con `AIza...`)
+1. Ve a https://platform.deepseek.com
+2. Registrate o inicia sesión
+3. Ve a **API Keys** en el menú
+4. Click en **Create API Key**
+5. Copia la clave (empieza con `sk-...`)
+
+Deepseek tiene capa gratuita con crédito inicial. Si lo agotás, el costo es ínfimo:
+- **Input**: $0.14 por millón de tokens
+- **Output**: $0.28 por millón de tokens
+
+(Para comparar: Gemini cuesta $0.075/$0.30, pero Deepseek te da mucho más valor por menos dinero)
 
 ## Paso 2 — Configurar en Render
 
@@ -85,7 +92,7 @@ Usamos **Google Gemini Flash** porque es de los más baratos (tiene capa gratuit
 
    | Key | Value |
    |-----|-------|
-   | `GEMINI_API_KEY` | tu clave (AIza...) |
+   | `DEEPSEEK_API_KEY` | tu clave (sk-...) |
 
 3. Save Changes → Render redespliega solo
 
@@ -94,9 +101,9 @@ escáner de banca incluye una lectura del estratega.
 
 ## Nota de costo
 
-Gemini Flash tiene una capa gratuita generosa (suficiente para uso personal).
-Si la superas, cuesta centavos por millón de tokens. Cada análisis usa muy
-pocos tokens, así que el gasto es mínimo.
+Deepseek es de lo más barato del mercado. Cada análisis usa muy pocos tokens,
+así que el gasto es praticamente nulo incluso si lo usás todos los días.
 
 ⚠️ Igual que con API-Football: la clave va SOLO en las variables de entorno
 de Render, nunca en el código ni en el chat.
+

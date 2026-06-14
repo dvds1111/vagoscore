@@ -707,12 +707,12 @@ async function requestAIAnalysis() {
     const d = await fetch('/api/ai/analyze', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prediction_data: lastPred }) }).then(r=>r.json());
     const zone = $('ai-zone');
     if (!d.available) {
-      if (zone) zone.innerHTML = `<div class="ai-panel"><div class="ai-head"><span class="ai-badge">⬡ IA</span><span class="ai-title">Análisis con IA</span></div><p style="color:var(--muted);font-size:0.9rem">La IA no está configurada. Agrega tu clave GEMINI_API_KEY en Render para desbloquear el análisis experto.</p></div>`;
+      if (zone) zone.innerHTML = `<div class="ai-panel"><div class="ai-head"><span class="ai-badge">⬡ IA</span><span class="ai-title">Análisis con IA</span></div><p style="color:var(--muted);font-size:0.9rem">La IA no está configurada. Agrega tu clave DEEPSEEK_API_KEY en Render para desbloquear el análisis experto.</p></div>`;
       return;
     }
     const factorsHTML = (d.key_factors || []).map(f => `<div class="ai-factor">${f}</div>`).join('');
     if (zone) zone.innerHTML = `<div class="ai-panel">
-      <div class="ai-head"><span class="ai-badge">⬡ IA · GEMINI</span><span class="ai-title">Lectura experta del partido</span></div>
+      <div class="ai-head"><span class="ai-badge">⬡ IA · DEEPSEEK</span><span class="ai-title">Lectura experta del partido</span></div>
       <div class="ai-summary">${d.summary || ''}</div>
       ${factorsHTML ? `<div class="ai-factors">${factorsHTML}</div>` : ''}
       ${d.betting_read ? `<div class="ai-betting"><span class="ai-betting-lbl">Lectura de apuesta</span>${d.betting_read}</div>` : ''}

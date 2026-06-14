@@ -1,58 +1,61 @@
 """
-VagoScore — Capa de IA (Google Gemini)
+VagoScore — Capa de IA (Deepseek)
 
 Toma todo el análisis estadístico de un partido y genera una interpretación
 experta en lenguaje natural: lectura táctica, factores clave, y una valoración
 honesta del valor de apuesta.
 
-La clave se lee de la variable de entorno GEMINI_API_KEY (nunca hardcodeada).
+La clave se lee de la variable de entorno DEEPSEEK_API_KEY (nunca hardcodeada).
 Si no hay clave, el módulo se desactiva limpiamente y la app sigue funcionando.
 
-Modelo: gemini-2.0-flash (rápido y muy económico).
+Modelo: deepseek-chat (rápido, muy barato y excelente para análisis).
+Costo: ~$0.14 por millón de tokens de entrada, $0.28 de salida.
 """
 
 import os
 import json
 import requests
 
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
-)
+DEEPSEEK_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
 
-def has_gemini() -> bool:
-    return bool(GEMINI_KEY)
+def has_ai() -> bool:
+    """Verifica si la IA está configurada (compatible con cualquier proveedor)."""
+    return bool(DEEPSEEK_KEY)
 
 
-def _call_gemini(prompt: str, max_tokens: int = 800) -> str:
-    """Llamada base a Gemini. Devuelve texto o '' si falla."""
-    if not GEMINI_KEY:
+def _call_ai(prompt: str, max_tokens: int = 800) -> str:
+    """Llamada base a Deepseek. Devuelve texto o '' si falla."""
+    if not DEEPSEEK_KEY:
         return ""
     try:
         resp = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_KEY}",
-            headers={"Content-Type": "application/json"},
+            DEEPSEEK_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {DEEPSEEK_KEY}",
+            },
             json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "maxOutputTokens": max_tokens,
-                },
+                "model": DEEPSEEK_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": max_tokens,
             },
             timeout=25,
         )
         resp.raise_for_status()
         data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
+        if "error" in data:
+            print(f"[deepseek] API Error: {data['error']}")
             return ""
-        parts = candidates[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts).strip()
+        choices = data.get("choices", [])
+        if not choices:
+            return ""
+        return choices[0].get("message", {}).get("content", "").strip()
     except requests.RequestException as e:
-        print(f"[gemini] Error: {e}")
+        print(f"[deepseek] Request error: {e}")
         return ""
 
 
@@ -66,7 +69,7 @@ def analyze_match(prediction_data: dict, api_predictions: dict = None,
 
     Devuelve {summary, key_factors[], betting_read, available} 
     """
-    if not has_gemini():
+    if not has_ai():
         return {"available": False}
 
     pred = prediction_data.get("prediction", {})
@@ -115,7 +118,7 @@ Responde ÚNICAMENTE con un JSON válido (sin markdown, sin ```), con esta estru
 
 Sé concreto, usa los datos reales que te di, y mantén un tono profesional pero accesible."""
 
-    text = _call_gemini(prompt, max_tokens=700)
+    text = _call_ai(prompt, max_tokens=700)
     if not text:
         return {"available": False}
 
@@ -141,7 +144,7 @@ def explain_bankroll_scan(scan_results: dict, bankroll: float, currency: str) ->
     Genera un resumen en lenguaje natural del escáner de banca multi-partido:
     explica la estrategia, por qué esas apuestas, y la gestión de riesgo.
     """
-    if not has_gemini():
+    if not has_ai():
         return ""
 
     bets = scan_results.get("recommended_bets", [])
@@ -167,4 +170,5 @@ APUESTAS RECOMENDADAS:
 
 En 3-4 frases en español, explica: la lógica de la cartera, por qué estas apuestas tienen valor, y un recordatorio prudente sobre la gestión de riesgo. No uses markdown ni listas, solo texto fluido."""
 
-    return _call_gemini(prompt, max_tokens=400)
+    return _call_ai(prompt, max_tokens=400)
+
