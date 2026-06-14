@@ -622,3 +622,65 @@ def get_all_fixtures_for_scan(league_id: int, season: int, days_ahead: int = 7) 
     """
     fixtures = get_upcoming_fixtures(league_id, season, days_ahead)
     return fixtures  # las cuotas se piden bajo demanda en el escáner
+
+
+# ─── NUEVO v8: Detalle completo de partido en vivo ────────────────────────────
+
+def get_live_match_detail(fixture_id: int) -> dict:
+    """
+    Detalle completo de un partido en vivo: marcador, minuto, goleadores,
+    eventos, posesión y estadísticas. Todo lo necesario para la vista en vivo.
+    """
+    data = _request("fixtures", {"id": fixture_id}, cache_type="lineup")
+    resp = data.get("response", [])
+    if not resp:
+        return {}
+    m = resp[0]
+    fixture = m.get("fixture", {})
+    teams = m.get("teams", {})
+    goals = m.get("goals", {})
+    status = fixture.get("status", {})
+
+    # Eventos (goles, tarjetas, cambios)
+    events = []
+    for ev in m.get("events", []):
+        events.append({
+            "minute": ev.get("time", {}).get("elapsed"),
+            "extra": ev.get("time", {}).get("extra"),
+            "team": ev.get("team", {}).get("name"),
+            "team_id": ev.get("team", {}).get("id"),
+            "player": ev.get("player", {}).get("name"),
+            "assist": ev.get("assist", {}).get("name"),
+            "type": ev.get("type"),       # Goal, Card, subst
+            "detail": ev.get("detail"),   # Normal Goal, Yellow Card, etc.
+        })
+
+    # Estadísticas (posesión, tiros, etc.)
+    stats = {"home": {}, "away": {}}
+    stats_resp = m.get("statistics", [])
+    for i, team_stats in enumerate(stats_resp):
+        side = "home" if i == 0 else "away"
+        for s in team_stats.get("statistics", []):
+            stats[side][s.get("type")] = s.get("value")
+
+    return {
+        "fixture_id": fixture_id,
+        "status": status.get("short"),       # 1H, HT, 2H, LIVE, FT
+        "elapsed": status.get("elapsed"),
+        "home": {
+            "name": teams.get("home", {}).get("name"),
+            "logo": teams.get("home", {}).get("logo"),
+            "id": teams.get("home", {}).get("id"),
+            "goals": goals.get("home"),
+        },
+        "away": {
+            "name": teams.get("away", {}).get("name"),
+            "logo": teams.get("away", {}).get("logo"),
+            "id": teams.get("away", {}).get("id"),
+            "goals": goals.get("away"),
+        },
+        "events": events,
+        "goals_events": [e for e in events if e["type"] == "Goal"],
+        "stats": stats,
+        "league": m.get("league", {}).get("name"),
+    }

@@ -138,7 +138,7 @@ async function loadLive() {
     if (live.length) {
       $('live-badge').hidden = false;
       $('live-strip').hidden = false;
-      $('ls-scroll').innerHTML = live.map(m => `<div class="ls-match"><span>${m.home}</span><span class="ls-score">${m.score}</span><span>${m.away}</span><span class="ls-min">${m.elapsed}'</span></div>`).join('');
+      $('ls-scroll').innerHTML = live.map(m => `<div class="ls-match" onclick="openLiveMatch(${m.fixture_id||0})" style="cursor:pointer"><span>${m.home}</span><span class="ls-score">${m.score}</span><span>${m.away}</span><span class="ls-min">${m.elapsed}'</span></div>`).join('');
     }
   } catch {}
 }
@@ -173,6 +173,8 @@ async function runAnalysis() {
     lastPred = data;
     renderResults(data);
     $('results-zone').hidden = false;
+    // Cargar alineación probable dentro del análisis
+    loadAnalysisLineup(data);
   } catch(err) {
     clearInterval(ldTimer);
     $('loading').hidden = true;
@@ -235,14 +237,16 @@ function renderResults(data) {
       <div class="xg-block"><div class="xg-num">${p.xg_a}</div><div class="xg-lbl">xG ${a}</div></div>
       <div class="xg-block"><div class="xg-num">${p.xg_b}</div><div class="xg-lbl">xG ${b}</div></div>
     </div>
-    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">02</span><h2 class="sh-title">RADAR DE SEÑALES</h2><div class="sh-line"></div></div>
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">02</span><h2 class="sh-title">DATOS DEL PARTIDO</h2><div class="sh-line"></div></div>
+    ${buildDetailPanels(pred, a, b)}
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">03</span><h2 class="sh-title">ALINEACIÓN PROBABLE</h2><div class="sh-line"></div></div>
+    <div id="analysis-lineup-zone"><div class="ai-loading">Cargando alineaciones probables…</div></div>
+    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">04</span><h2 class="sh-title">RADAR DE SEÑALES</h2><div class="sh-line"></div></div>
     <div class="radar-wrap">${radarHTML}</div>
-    <div class="section-header" style="padding:1rem 2rem"><span class="sh-num">03</span><h2 class="sh-title">DESGLOSE</h2><div class="sh-line"></div></div>
+    <div class="section-header" style="padding:1rem 2rem"><span class="sh-num">05</span><h2 class="sh-title">DESGLOSE</h2><div class="sh-line"></div></div>
     <div class="factors-grid" style="margin:0 2rem 2rem">${factorsHTML}</div>
     ${kpHTML}
     <div id="ai-zone"><div class="ai-panel" style="text-align:center"><div class="ai-head" style="justify-content:center"><span class="ai-badge">⬡ IA</span><span class="ai-title">Análisis experto con IA</span></div><p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">Deja que la IA interprete todo el análisis: lectura táctica, factores clave y dónde está el valor.</p><button class="ai-cta-btn" id="ai-trigger" onclick="requestAIAnalysis()">Generar análisis IA ⬡</button></div></div>
-    <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">05</span><h2 class="sh-title">DATOS CRUDOS</h2><div class="sh-line"></div></div>
-    ${buildDetailPanels(pred, a, b)}
     <div class="cta-banca">
       <p>¿Hay valor en este partido? Lleva estas probabilidades al módulo de Banca y deja que Kelly calcule cuánto apostar.</p>
       <button onclick="sendToKelly(${p.p_win_a},${p.p_draw},${p.p_win_b},'${esc(a)}','${esc(b)}')">IR A BANCA →</button>
@@ -261,7 +265,7 @@ function buildDetailPanels(pred, a, b) {
   if (eloA != null || eloB != null) {
     const diff = (eloA && eloB) ? Math.abs(eloA - eloB) : null;
     const fav = (eloA && eloB) ? (eloA > eloB ? a : b) : '—';
-    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+    html += `<div class="detail-panel open"><div class="dp-header" onclick="togglePanel(this)">
       <span class="dp-title"><span class="dp-icon">▦</span>Ranking ELO${eloEst ? ' <span style="color:#666;font-size:0.9em">(derivado)</span>' : ''}</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
         <div class="elo-side"><div class="elo-num a">${eloA ?? '—'}</div><div class="elo-team">${a}</div></div>
@@ -285,7 +289,7 @@ function buildDetailPanels(pred, a, b) {
           <span class="rm-date">${m.date ? new Date(m.date).toLocaleDateString('es-CO',{day:'numeric',month:'short'}) : ''}</span>
         </div>`).join('');
 
-    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+    html += `<div class="detail-panel open"><div class="dp-header" onclick="togglePanel(this)">
       <span class="dp-title"><span class="dp-icon">◷</span>Últimos partidos · ambos equipos</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner">
         <div class="form-row"><span class="form-team-lbl">${a}</span><div class="form-dots">${dots(formA)}</div></div>
@@ -302,7 +306,7 @@ function buildDetailPanels(pred, a, b) {
   const mvA = raw.market_value_a, mvB = raw.market_value_b;
   const mvEst = raw.market_is_estimate;
   if (mvA != null || mvB != null) {
-    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+    html += `<div class="detail-panel open"><div class="dp-header" onclick="togglePanel(this)">
       <span class="dp-title"><span class="dp-icon">$</span>Valor de plantilla${mvEst ? ' <span style="color:#666;font-size:0.9em">(estimado)</span>' : ''}</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner"><div class="elo-compare">
         <div class="elo-side"><div class="elo-num a" style="font-size:2rem">${fmtMV(mvA)}</div><div class="elo-team">${a}</div></div>
@@ -314,7 +318,7 @@ function buildDetailPanels(pred, a, b) {
   // Panel 4: Head to head
   const h2h = raw.h2h_summary;
   if (h2h) {
-    html += `<div class="detail-panel"><div class="dp-header" onclick="togglePanel(this)">
+    html += `<div class="detail-panel open"><div class="dp-header" onclick="togglePanel(this)">
       <span class="dp-title"><span class="dp-icon">⚔</span>Head to Head</span><span class="dp-chevron">▾</span></div>
       <div class="dp-body"><div class="dp-inner"><p style="font-family:var(--ff-mono);font-size:0.8rem;color:var(--muted);line-height:1.7">${typeof h2h === 'string' ? h2h : JSON.stringify(h2h)}</p></div></div></div>`;
   }
@@ -530,10 +534,6 @@ function renderPitchSection(lineups, home, away) {
 }
 
 function showPitch(side) {
-  document.querySelectorAll('.pitch-tab').forEach((t,i) => {
-    const isThis = (side === 'home' && i === 0) || (side === 'away' && (i === 1 || !document.querySelector('.pitch-tab:nth-child(2)')));
-  });
-  // marcar activa por texto
   const tabs = document.querySelectorAll('.pitch-tab');
   tabs.forEach(t => t.classList.remove('active'));
   const lineup = window._lineups[side];
@@ -542,63 +542,53 @@ function showPitch(side) {
   if (tabs[idx]) tabs[idx].classList.add('active');
 
   const cont = $('pitch-container');
-  let dots = '';
-  (lineup.starters || []).forEach(p => {
-    const pos = gridToPosition(p.grid, side);
-    if (!pos) return;
-    const rating = p.rating ? parseFloat(p.rating) : null;
-    const rClass = rating ? (rating >= 7 ? 'high' : rating >= 6.5 ? 'mid' : 'low') : 'mid';
-    const shortName = (p.name || '').split(' ').slice(-1)[0];
-    dots += `<div class="player-dot" style="left:${pos.x}%;top:${pos.y}%" onclick="showPlayer(${p.id||0}, '${esc(p.name||'')}', '${p.pos||''}', ${p.number||0}, ${currentMatch.season})">
-      <div class="pd-circle">${p.number || '?'}</div>
-      <div class="pd-name">${shortName}</div>
-      ${rating ? `<div class="pd-rating ${rClass}">${rating.toFixed(1)}</div>` : ''}
-    </div>`;
+  const starters = lineup.starters || [];
+
+  // Agrupar jugadores por fila (row del grid) para centrar cada línea
+  const rows = {};
+  starters.forEach(p => {
+    if (!p.grid) return;
+    const row = p.grid.split(':')[0];
+    (rows[row] = rows[row] || []).push(p);
   });
+  const rowKeys = Object.keys(rows).map(Number).sort((x, y) => x - y);
+  const maxRow = Math.max(...rowKeys, 1);
+
+  let dots = '';
+  rowKeys.forEach(row => {
+    const playersInRow = rows[row];
+    const n = playersInRow.length;
+    // Ordenar por columna del grid para mantener orden visual
+    playersInRow.sort((a, b) => (+a.grid.split(':')[1]) - (+b.grid.split(':')[1]));
+    playersInRow.forEach((p, i) => {
+      // Y: portero abajo (88%), delanteros arriba (12%)
+      const y = 88 - ((row - 1) / Math.max(maxRow - 1, 1)) * 74;
+      // X: centrar la línea — n jugadores distribuidos simétricamente
+      const x = ((i + 1) / (n + 1)) * 100;
+      const rating = p.rating ? parseFloat(p.rating) : null;
+      const rClass = rating ? (rating >= 7 ? 'high' : rating >= 6.5 ? 'mid' : 'low') : 'mid';
+      const shortName = (p.name || '').split(' ').slice(-1)[0];
+      dots += `<div class="player-dot" style="left:${x}%;top:${y}%" onclick="showPlayer(${p.id||0}, '${esc(p.name||'')}', '${p.pos||''}', ${p.number||0}, ${currentMatch.season})">
+        <div class="pd-circle">${p.number || '?'}</div>
+        <div class="pd-name">${shortName}</div>
+        ${rating ? `<div class="pd-rating ${rClass}">${rating.toFixed(1)}</div>` : ''}
+      </div>`;
+    });
+  });
+
+  const probableTag = lineup.is_probable
+    ? '<span style="color:#ffb432">◷ probable</span>'
+    : '<span style="color:var(--lime)">✓ confirmada</span>';
 
   cont.innerHTML = `
     <div class="pitch">
       <div class="pitch-box top"></div>
       <div class="pitch-box bot"></div>
+      <div class="pitch-spot"></div>
       ${dots}
     </div>
-    <div class="pitch-formation">Formación ${lineup.formation || '—'}</div>
+    <div class="pitch-formation">Formación ${lineup.formation || '—'} · ${probableTag}</div>
     ${lineup.coach ? `<div class="pitch-coach">DT: ${lineup.coach}</div>` : ''}`;
-}
-
-// Convierte el grid "fila:columna" de API-Football a coordenadas % en la cancha
-function gridToPosition(grid, side) {
-  if (!grid) return null;
-  const [row, col] = grid.split(':').map(Number);
-  if (!row) return null;
-  // row 1 = portero, filas suben hacia adelante. Máx ~5 filas.
-  const maxRows = 5;
-  // Equipo local ataca hacia arriba; visitante hacia abajo (en su propia pestaña, siempre de abajo a arriba)
-  const y = 92 - ((row - 1) / maxRows) * 80;  // portero abajo (92%), delanteros arriba
-  // columnas: distribuir horizontalmente. Asumimos hasta 5 por fila.
-  // Necesitamos saber cuántos hay en la fila; aproximamos con col sobre un máx típico
-  const x = col ? (col * 100) / (colsInRow(grid) + 1) : 50;
-  return { x, y };
-}
-
-// Cuenta cuántos jugadores comparten la misma fila (para distribuir columnas)
-let _rowCounts = {};
-function colsInRow(grid) {
-  const row = grid.split(':')[0];
-  if (window._lineups) {
-    const side = document.querySelector('.pitch-tab.active');
-    // contar en ambos por si acaso
-    let count = 0;
-    ['home','away'].forEach(s => {
-      const lu = window._lineups[s];
-      if (lu && lu.starters) {
-        const c = lu.starters.filter(p => p.grid && p.grid.split(':')[0] === row).length;
-        if (c > count) count = c;
-      }
-    });
-    return count || 4;
-  }
-  return 4;
 }
 
 async function showPlayer(id, name, pos, number, season) {
@@ -729,6 +719,41 @@ function renderScan(d, cur) {
 }
 
 /* ═══ PANEL DE IA EN ANÁLISIS ═══ */
+async function loadAnalysisLineup(data) {
+  const zone = $('analysis-lineup-zone');
+  if (!zone) return;
+  const meta = data.api_meta || {};
+  const homeId = meta.team_a_id, awayId = meta.team_b_id;
+  const season = (data.prediction && data.prediction.raw && data.prediction.raw.season) || 2024;
+  const a = data.team_a, b = data.team_b;
+
+  if (!homeId && !awayId) {
+    zone.innerHTML = '<div style="margin:0 2rem 2rem;padding:1.5rem;background:var(--gray-3);border:1px solid var(--border);text-align:center;font-family:var(--ff-mono);font-size:0.75rem;color:var(--muted)">Las alineaciones requieren API-Football configurada.</div>';
+    return;
+  }
+
+  try {
+    const url = `/api/lineup/detailed/0?season=${season}&home_id=${homeId}&away_id=${awayId}`;
+    const lineups = await fetch(url).then(r => r.json());
+    if (!lineups || (!lineups.home && !lineups.away)) {
+      zone.innerHTML = '<div style="margin:0 2rem 2rem;padding:1.5rem;background:var(--gray-3);border:1px solid var(--border);text-align:center;font-family:var(--ff-mono);font-size:0.75rem;color:var(--muted)">No hay datos de alineación disponibles.</div>';
+      return;
+    }
+    window._lineups = lineups;
+    const isProbable = lineups.status === 'probable';
+    let html = `<div class="lineup-status ${isProbable ? 'probable' : 'confirmed'}">
+      ${isProbable ? '◷ ALINEACIÓN PROBABLE' : '✓ ALINEACIÓN CONFIRMADA'}
+      <span>${isProbable ? 'Estimada según jugadores con más minutos · se actualiza al confirmarse' : 'Titulares oficiales'}</span>
+    </div>`;
+    html += renderPitchSection(lineups, a, b);
+    zone.innerHTML = html;
+    const firstTab = zone.querySelector('.pitch-tab');
+    if (firstTab) firstTab.click();
+  } catch(e) {
+    zone.innerHTML = '<div style="margin:0 2rem 2rem;padding:1.5rem;text-align:center;color:var(--muted);font-family:var(--ff-mono);font-size:0.75rem">No se pudieron cargar las alineaciones.</div>';
+  }
+}
+
 async function requestAIAnalysis() {
   if (!lastPred) return;
   const btn = $('ai-trigger');
@@ -802,4 +827,74 @@ function renderOptResults(d) {
     <div style="padding:0 2rem 0.5rem;font-family:var(--ff-mono);font-size:0.62rem;letter-spacing:2px;color:var(--muted)">DEFAULT (gris) → OPTIMIZADO (lima)</div>
     <div class="optw-list">${bars}</div>
     <p style="padding:1rem 2rem 2rem;font-family:var(--ff-mono);font-size:0.65rem;color:#555;line-height:1.7">Estos pesos minimizan el error sobre tus datos históricos. Optimizar el pasado no garantiza el futuro: con muestras pequeñas, el riesgo de sobreajuste es real. Úsalos como punto de partida, no como verdad absoluta.</p>`;
+}
+
+/* ═══════════════ PARTIDO EN VIVO ═══════════════ */
+let liveRefreshTimer = null;
+
+const liveBackBtn = $('live-back');
+if (liveBackBtn) liveBackBtn.addEventListener('click', () => {
+  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
+  goView('home');
+});
+
+async function openLiveMatch(fixtureId) {
+  if (!fixtureId) return;
+  goView('live');
+  const zone = $('live-detail-zone');
+  zone.innerHTML = '<div class="loading"><div class="ld-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><p>Cargando partido en vivo…</p></div>';
+
+  await renderLiveMatch(fixtureId);
+  // Auto-refresco cada 30 segundos
+  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
+  liveRefreshTimer = setInterval(() => renderLiveMatch(fixtureId, true), 30000);
+}
+
+async function renderLiveMatch(fixtureId, isRefresh) {
+  const zone = $('live-detail-zone');
+  try {
+    const d = await fetch(`/api/live/${fixtureId}`).then(r => r.json());
+    if (d.error) { zone.innerHTML = `<div class="scan-verdict" style="border-color:var(--red);margin:2rem"><h3>No disponible</h3><p>${d.error}</p></div>`; return; }
+
+    // Marcador grande
+    const goalsEvents = (d.goals_events || []).map(g =>
+      `<div class="live-goal"><span class="lg-min">${g.minute}'</span><span class="lg-player">⚽ ${g.player || '—'}</span><span class="lg-team">${g.team || ''}</span></div>`
+    ).join('') || '<p style="color:var(--muted);font-family:var(--ff-mono);font-size:0.75rem;padding:0.5rem 0">Sin goles todavía</p>';
+
+    // Estadísticas
+    const statRows = [];
+    const sh = d.stats.home || {}, sa = d.stats.away || {};
+    const statKeys = [['Ball Possession','Posesión'],['Total Shots','Tiros'],['Shots on Goal','Tiros al arco'],['Corner Kicks','Córners'],['Fouls','Faltas']];
+    statKeys.forEach(([k,label]) => {
+      if (sh[k] != null || sa[k] != null) {
+        statRows.push(`<div class="live-stat"><span class="lst-h">${sh[k] ?? '—'}</span><span class="lst-lbl">${label}</span><span class="lst-a">${sa[k] ?? '—'}</span></div>`);
+      }
+    });
+
+    // Sugerencias en vivo
+    const sugg = (d.live_suggestions || []).map(s =>
+      `<div class="live-sugg"><div class="lsug-market">${s.market}</div><div class="lsug-reason">${s.reason}</div></div>`
+    ).join('');
+
+    zone.innerHTML = `
+      <div class="live-scoreboard">
+        <div class="lsb-team"><div class="lsb-logo">${d.home.logo?`<img src="${d.home.logo}">`:''}</div><div class="lsb-name">${d.home.name}</div></div>
+        <div class="lsb-center">
+          <div class="lsb-score">${d.home.goals ?? 0} - ${d.away.goals ?? 0}</div>
+          <div class="lsb-min">● ${d.elapsed ?? 0}' ${d.status || ''}</div>
+        </div>
+        <div class="lsb-team"><div class="lsb-logo">${d.away.logo?`<img src="${d.away.logo}">`:''}</div><div class="lsb-name">${d.away.name}</div></div>
+      </div>
+
+      <div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">●</span><h2 class="sh-title">GOLES</h2><div class="sh-line"></div></div>
+      <div class="live-goals">${goalsEvents}</div>
+
+      ${statRows.length ? `<div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">▦</span><h2 class="sh-title">ESTADÍSTICAS</h2><div class="sh-line"></div></div><div class="live-stats">${statRows.join('')}</div>` : ''}
+
+      ${sugg ? `<div class="section-header" style="padding:2rem 2rem 1rem"><span class="sh-num">⚡</span><h2 class="sh-title">SUGERENCIAS EN VIVO</h2><div class="sh-line"></div></div><div class="live-suggs">${sugg}</div><p style="padding:1rem 2rem 2rem;font-family:var(--ff-mono);font-size:0.62rem;color:#555;line-height:1.6">${d.disclaimer}</p>` : ''}
+
+      <div style="padding:1rem 2rem 3rem;text-align:center;font-family:var(--ff-mono);font-size:0.62rem;color:#555">↻ Se actualiza solo cada 30 segundos</div>`;
+  } catch(e) {
+    if (!isRefresh) zone.innerHTML = `<div class="scan-verdict" style="border-color:var(--red);margin:2rem"><h3>Error</h3><p>No se pudo cargar el partido en vivo.</p></div>`;
+  }
 }

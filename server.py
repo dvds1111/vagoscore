@@ -137,6 +137,51 @@ def live():
     return jsonify({"live": apif.get_live_fixtures()})
 
 
+@app.route("/api/live/<int:fixture_id>")
+def live_detail(fixture_id):
+    """Detalle completo de un partido en vivo con sugerencias."""
+    detail = apif.get_live_match_detail(fixture_id)
+    if not detail:
+        return jsonify({"error": "Partido no encontrado o no está en vivo"}), 200
+
+    suggestions = []
+    try:
+        hg = detail["home"]["goals"] or 0
+        ag = detail["away"]["goals"] or 0
+        elapsed = detail.get("elapsed") or 0
+        total_goals = hg + ag
+        poss_home = detail["stats"].get("home", {}).get("Ball Possession")
+
+        if elapsed and elapsed < 70:
+            if total_goals >= 2:
+                suggestions.append({
+                    "market": "Más de 2.5 goles",
+                    "reason": f"Ya van {total_goals} goles en el minuto {elapsed}. El ritmo favorece el over.",
+                })
+            elif total_goals == 0 and elapsed > 30:
+                suggestions.append({
+                    "market": "Menos de 2.5 goles",
+                    "reason": f"0-0 al minuto {elapsed}. Partido trabado, el under gana fuerza.",
+                })
+        if hg > ag:
+            suggestions.append({
+                "market": f"Gana {detail['home']['name']}",
+                "reason": f"Va ganando {hg}-{ag}" + (f" con {poss_home} de posesión." if poss_home else "."),
+            })
+        elif ag > hg:
+            suggestions.append({
+                "market": f"Gana {detail['away']['name']}",
+                "reason": f"Va ganando {ag}-{hg} como visitante.",
+            })
+    except Exception as e:
+        print(f"[live] suggestion error: {e}")
+
+    detail["live_suggestions"] = suggestions
+    detail["disclaimer"] = ("Sugerencias en vivo basadas solo en el estado actual "
+                            "del partido. El fútbol cambia en segundos. No es consejo de apuesta.")
+    return jsonify(detail)
+
+
 @app.route("/api/lineups/<int:fixture_id>")
 def lineups(fixture_id):
     return jsonify(apif.get_fixture_lineups(fixture_id))

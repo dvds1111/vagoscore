@@ -242,6 +242,8 @@ def run_prediction(
     # Marca si el valor de mercado es estimado
     raw["market_is_estimate"] = market_a.get("is_estimate", False) if isinstance(market_a, dict) else False
     raw["elo_is_estimate"] = elo_a.get("is_estimate", False) if isinstance(elo_a, dict) else False
+    if use_api:
+        raw["season"] = season
     # Jugador clave (mejor rating de cada equipo)
     raw["key_player_a"] = _best_player(sofa_a)
     raw["key_player_b"] = _best_player(sofa_b)

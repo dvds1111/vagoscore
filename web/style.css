@@ -505,7 +505,7 @@ input[type=number] { -moz-appearance: textfield; }
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  opacity: 0.5;
+  opacity: 0.6;
 }
 #world-map-bg {
   width: 100%;
@@ -513,7 +513,7 @@ input[type=number] { -moz-appearance: textfield; }
   display: block;
 }
 .wm-dot {
-  fill: rgba(120, 130, 145, 0.18);
+  fill: rgba(130, 140, 155, 0.22);
   transition: fill 0.25s ease, r 0.25s ease;
 }
 /* El contenido principal va por encima del mapa */
@@ -558,3 +558,33 @@ input[type=number] { -moz-appearance: textfield; }
 .lineup-status.confirmed { background: rgba(200,241,53,0.08); border-left: 3px solid var(--lime); color: var(--lime); }
 .lineup-status.probable { background: rgba(255,180,50,0.08); border-left: 3px solid #ffb432; color: #ffd089; }
 .lineup-status span { font-size: 0.62rem; letter-spacing: 0.5px; color: var(--muted); text-transform: none; }
+
+/* Punto central de la cancha */
+.pitch-spot { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 50%; transform: translate(-50%,-50%); }
+
+/* ═══════════════ PARTIDO EN VIVO ═══════════════ */
+.live-scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 2rem; align-items: center; margin: 1.5rem 2rem; padding: 2rem; background: var(--gray-3); border: 1px solid var(--red); }
+.lsb-team { text-align: center; }
+.lsb-logo img { width: 64px; height: 64px; object-fit: contain; }
+.lsb-name { font-family: var(--ff-display); font-size: 1.5rem; letter-spacing: 1px; margin-top: 0.5rem; }
+.lsb-center { text-align: center; }
+.lsb-score { font-family: var(--ff-display); font-size: 4rem; line-height: 1; color: #fff; }
+.lsb-min { font-family: var(--ff-mono); font-size: 0.75rem; color: var(--red); margin-top: 0.5rem; animation: livePulse 2s ease-in-out infinite; }
+@keyframes livePulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+.live-goals { margin: 0 2rem; display: flex; flex-direction: column; gap: 1px; }
+.live-goal { display: grid; grid-template-columns: 50px 1fr auto; gap: 1rem; align-items: center; padding: 0.8rem 1.2rem; background: var(--gray-3); border: 1px solid var(--border); }
+.lg-min { font-family: var(--ff-display); font-size: 1.3rem; color: var(--lime); }
+.lg-player { font-family: var(--ff-body); font-weight: 600; }
+.lg-team { font-family: var(--ff-mono); font-size: 0.62rem; color: var(--muted); }
+
+.live-stats { margin: 0 2rem; display: flex; flex-direction: column; gap: 1px; }
+.live-stat { display: grid; grid-template-columns: 60px 1fr 60px; gap: 1rem; align-items: center; padding: 0.7rem 1.2rem; background: var(--gray-3); border: 1px solid var(--border); }
+.lst-h { font-family: var(--ff-display); font-size: 1.3rem; color: var(--lime); text-align: left; }
+.lst-a { font-family: var(--ff-display); font-size: 1.3rem; color: #fff; text-align: right; }
+.lst-lbl { font-family: var(--ff-mono); font-size: 0.6rem; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); text-align: center; }
+
+.live-suggs { margin: 0 2rem; display: flex; flex-direction: column; gap: 1px; }
+.live-sugg { padding: 1.1rem 1.3rem; background: rgba(200,241,53,0.05); border-left: 3px solid var(--lime); }
+.lsug-market { font-family: var(--ff-display); font-size: 1.4rem; letter-spacing: 0.5px; color: var(--lime); }
+.lsug-reason { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; line-height: 1.5; }
